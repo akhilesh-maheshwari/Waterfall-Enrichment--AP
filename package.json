@@ -1,0 +1,10 @@
+{
+  "name": "waterfall-enrichment",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Waterfall Enrichment Actor",
+  "main": "main.js",
+  "dependencies": {
+    "apify": "^3.0.0"
+  }
+}
