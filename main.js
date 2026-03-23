@@ -102,7 +102,7 @@ try {
           time_of_request             : time,
           service_request_tag_name    : serviceTagName,
           service_request_size        : rowCount,
-          service_request_credits_cost: creditsCost,
+          service_cost: creditsCost,
           service_request_url         : driveLink
         }
       })
