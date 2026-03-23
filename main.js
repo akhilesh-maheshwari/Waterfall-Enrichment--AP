@@ -6,8 +6,6 @@ try {
   // Step 1 - Get input from the form
   const input = await Actor.getInput();
 
-  console.log('Raw input:', JSON.stringify(input));
-
   const firstName = input.firstName || '';
   const lastName = input.lastName || '';
   const domain = input.domain || '';
@@ -20,25 +18,18 @@ try {
 
   // Step 2 - Auto convert Google Sheets URL to CSV export URL
   if (csvUrl.includes('docs.google.com/spreadsheets')) {
-    
-    // Extract the spreadsheet ID from the URL
     const match = csvUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    
     if (match) {
       const sheetId = match[1];
       csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`;
-      console.log('Converted to CSV export URL:', csvUrl);
+      console.log('Converted URL:', csvUrl);
     }
   }
 
-  if (!csvUrl) {
-    throw new Error('No CSV URL provided in input!');
-  }
-
-  // Step 3 - Send to Google Apps Script
+  // Step 3 - Send to Google Apps Script to download and save CSV
   console.log('Sending to Google Apps Script...');
 
-  const response = await fetch(
+  const gasResponse = await fetch(
     'https://script.google.com/macros/s/AKfycbyrkTBophapts2XV4ZA2HxmzUgB26wfhcZmm7qAz7wuRckW5suJSENN6GL_G4zeFx7I/exec',
     {
       method: 'POST',
@@ -53,18 +44,70 @@ try {
     }
   );
 
-  console.log('Response status:', response.status);
-  const text = await response.text();
-  console.log('Response text:', text);
+  const gasText = await gasResponse.text();
+  const gasResult = JSON.parse(gasText);
 
-  const result = JSON.parse(text);
+  console.log('Google Drive result:', JSON.stringify(gasResult));
 
-  if (result.status === 'success') {
-    console.log('CSV saved to Google Drive successfully!');
-    console.log('File name:', result.fileName);
-    console.log('File link:', result.fileLink);
+  if (gasResult.status !== 'success') {
+    throw new Error('Google Drive error: ' + gasResult.message);
+  }
+
+  console.log('CSV saved to Drive:', gasResult.fileLink);
+
+  // Step 4 - Count rows from CSV
+  console.log('Counting CSV rows...');
+  const csvResponse = await fetch(csvUrl);
+  const csvText = await csvResponse.text();
+  const allRows = csvText.trim().split('\n');
+  const rowCount = allRows.length - 1; // minus header row
+  console.log('Total rows (minus header):', rowCount);
+
+  // Step 5 - Calculate cost ($0.01 per row)
+  const creditsCost = rowCount * 0.01;
+  console.log('Credits cost:', creditsCost);
+
+  // Step 6 - Get Apify run details
+  const runId = Actor.getEnv().actorRunId || 'unknown';
+  const userId = Actor.getEnv().userId || 'unknown';
+  const actorId = Actor.getEnv().actorId || 'Waterfall Enrichment';
+  const timeOfRequest = new Date().toISOString();
+
+  console.log('Run ID:', runId);
+  console.log('User ID:', userId);
+
+  // Step 7 - Save to Airtable
+  console.log('Saving to Airtable...');
+
+  const airtableResponse = await fetch(
+    'https://api.airtable.com/v0/appCuadMXrDaqpfaDV/tblD3UXc3tYW0mOdT',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer patnv7kCUrgE8mLYo.c989d4ca80fdc406a7fdc0e43c36c6834e80009d59ea23cd56ab30f80676e1d0',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fields: {
+          user_unique_id: userId,
+          request_unique_id: runId,
+          time_of_request: timeOfRequest,
+          service_name: 'Waterfall Enrichment',
+          service_request_size: rowCount,
+          service_request_credits_cost: creditsCost,
+          service_request_url: gasResult.fileLink
+        }
+      })
+    }
+  );
+
+  const airtableResult = await airtableResponse.json();
+  console.log('Airtable result:', JSON.stringify(airtableResult));
+
+  if (airtableResult.id) {
+    console.log('Saved to Airtable successfully! Record ID:', airtableResult.id);
   } else {
-    console.log('Error from script:', result.message);
+    console.log('Airtable error:', JSON.stringify(airtableResult));
   }
 
 } catch (error) {
