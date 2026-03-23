@@ -92,7 +92,7 @@ try {
           user_unique_id: userId,
           request_unique_id: runId,
           time_of_request: timeOfRequest,
-          service_name: 'Waterfall Enrichment',
+          service_request_tag_name: 'Waterfall Enrichment',
           service_request_size: rowCount,
           service_request_credits_cost: creditsCost,
           service_request_url: gasResult.fileLink
