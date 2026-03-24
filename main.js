@@ -217,13 +217,10 @@ const time = now.toLocaleString('en-US', {
         console.log('Request ID:', requestId);
 
         const statsRes = await fetch(
-          'https://s1.boomerangserver.co.in/webhook/waterfall-request-stats',
+          `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${requestId}`,
           {
-            method : 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body   : JSON.stringify({
-              request_id: requestId
-            })
+            method : 'GET',
+            headers: { 'Content-Type': 'application/json' }
           }
         );
 
