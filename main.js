@@ -9,11 +9,11 @@ try {
   // ──────────────────────────────
   const input = await Actor.getInput();
 
-  const firstName          = input.firstName          || '';
-  const lastName           = input.lastName           || '';
-  const domain             = input.domain             || '';
-  const serviceTagName     = input.serviceRequestTagName || '';
-  let   csvUrl             = input.uploadedFile || input.fileUrl || input.csvUrl || '';
+  const firstName      = input.firstName             || '';
+  const lastName       = input.lastName              || '';
+  const domain         = input.domain                || '';
+  const serviceTagName = input.serviceRequestTagName || '';
+  let   csvUrl         = input.uploadedFile || input.fileUrl || input.csvUrl || '';
 
   console.log('First Name:', firstName);
   console.log('Last Name :', lastName);
@@ -85,6 +85,7 @@ try {
 
   // ──────────────────────────────
   // 7. SAVE TO AIRTABLE
+  // uses service_request_tag_name
   // ──────────────────────────────
   console.log('Saving to Airtable...');
   const atRes = await fetch(
@@ -102,7 +103,7 @@ try {
           time_of_request             : time,
           service_request_tag_name    : serviceTagName,
           service_request_size        : rowCount,
-          service_cost: creditsCost,
+          service_request_credits_cost: creditsCost,
           service_request_url         : driveLink
         }
       })
@@ -116,6 +117,37 @@ try {
     console.log('✅ Airtable record saved! ID:', atResult.id);
   } else {
     console.log('❌ Airtable error:', JSON.stringify(atResult));
+  }
+
+  // ──────────────────────────────
+  // 8. SEND TO WEBHOOK
+  // uses service_name instead of service_request_tag_name
+  // ──────────────────────────────
+  console.log('Sending to Webhook...');
+  const webhookRes = await fetch(
+    'https://s1.boomerangserver.co.in/webhook/waterfall-live',
+    {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({
+        request_unique_id  : runId,
+        time_of_request    : time,
+        service_name       : serviceTagName,
+        size               : rowCount,
+        service_request_url: driveLink,
+        source             : 'AP'
+      })
+    }
+  );
+
+  console.log('Webhook status:', webhookRes.status);
+  const webhookText = await webhookRes.text();
+  console.log('Webhook response:', webhookText);
+
+  if (webhookRes.status === 200) {
+    console.log('✅ Webhook sent successfully!');
+  } else {
+    console.log('❌ Webhook error:', webhookText);
   }
 
 } catch (err) {
