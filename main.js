@@ -8,8 +8,8 @@ try {
   // 1. GET INPUT
   // ──────────────────────────────
   const input          = await Actor.getInput();
-  const entries        = input.entries             || '';
-  const uploadedFile   = input.uploadedFile        || '';
+  const entries        = input.entries               || '';
+  const uploadedFile   = input.uploadedFile          || '';
   const serviceTagName = input.serviceRequestTagName || '';
 
   console.log('Tag Name:', serviceTagName);
@@ -17,27 +17,46 @@ try {
   console.log('File URL provided:', uploadedFile ? 'Yes' : 'No');
 
   // ──────────────────────────────
-  // 2. GET CSV CONTENT
+  // 2. BUILD CSV CONTENT
   // ──────────────────────────────
   let csvContent = '';
   let fileName   = '';
   let rowCount   = 0;
 
-  if (entries) {
-    // User typed entries directly
-    console.log('Using typed entries...');
-    csvContent = 'first_name,last_name,domain\n' + entries.trim();
-    rowCount   = entries.trim().split('\n').length;
-    fileName   = `${serviceTagName}_${new Date().toISOString()}.csv`
-                 .replace(/[^a-zA-Z0-9._-]/g, '_');
-    console.log('Row count:', rowCount);
+  if (entries && entries.trim()) {
 
-  } else if (uploadedFile) {
+    // User typed entries manually
+    console.log('Processing manual entries...');
+
+    // Clean each line
+    const lines = entries.trim().split('\n').map(l => l.trim()).filter(l => l);
+
+    // Validate each line has exactly 3 columns
+    const validLines = [];
+    for (const line of lines) {
+      const cols = line.split(',');
+      if (cols.length === 3) {
+        validLines.push(cols.map(c => c.trim()).join(','));
+      } else {
+        console.log('Skipping invalid line:', line);
+      }
+    }
+
+    // Add header row + data rows
+    csvContent = 'first_name,last_name,domain\n' + validLines.join('\n');
+    rowCount   = validLines.length;
+    fileName   = serviceTagName.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
+
+    console.log('Valid rows:', rowCount);
+    console.log('CSV preview:\n', csvContent.split('\n').slice(0, 3).join('\n'));
+
+  } else if (uploadedFile && uploadedFile.trim()) {
+
     // User provided a file URL
-    console.log('Using uploaded file URL...');
+    console.log('Processing file URL...');
 
     // Convert Google Sheets URL if needed
-    let csvUrl = uploadedFile;
+    let csvUrl = uploadedFile.trim();
     if (csvUrl.includes('docs.google.com/spreadsheets')) {
       const match = csvUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (match) {
@@ -49,19 +68,25 @@ try {
     // Download the CSV
     const csvRes = await fetch(csvUrl);
     csvContent   = await csvRes.text();
-    rowCount     = csvContent.trim().split('\n').length - 1;
-    fileName     = `${serviceTagName}_${new Date().toISOString()}.csv`
-                   .replace(/[^a-zA-Z0-9._-]/g, '_');
-    console.log('Row count:', rowCount);
+
+    // Count rows minus header
+    const allRows = csvContent.trim().split('\n');
+    rowCount = allRows.length - 1;
+    fileName = serviceTagName.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
+
+    console.log('Downloaded rows:', rowCount);
+    console.log('CSV preview:\n', allRows.slice(0, 3).join('\n'));
 
   } else {
-    throw new Error('No entries or file URL provided!');
+    throw new Error('Please provide either manual entries or a file URL!');
   }
 
   // ──────────────────────────────
   // 3. SAVE CSV TO GOOGLE DRIVE
+  // in Waterfall_Enrichment_AP folder
   // ──────────────────────────────
-  console.log('Saving CSV to Google Drive folder: Waterfall_Enrichment_AP');
+  console.log('Saving to Google Drive...');
+  console.log('File name:', fileName);
 
   const gasRes = await fetch(
     'https://script.google.com/macros/s/AKfycbyrkTBophapts2XV4ZA2HxmzUgB26wfhcZmm7qAz7wuRckW5suJSENN6GL_G4zeFx7I/exec',
@@ -87,6 +112,7 @@ try {
   // 4. CALCULATE COST
   // ──────────────────────────────
   const creditsCost = parseFloat((rowCount * 0.01).toFixed(2));
+  console.log('Row count:', rowCount);
   console.log('Credits cost:', creditsCost);
 
   // ──────────────────────────────
