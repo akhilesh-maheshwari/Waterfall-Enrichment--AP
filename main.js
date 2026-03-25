@@ -102,7 +102,7 @@ try {
   // ──────────────────────────────
   // 4. CALCULATE COST
   // ──────────────────────────────
-  const creditsCost = parseFloat((rowCount * 0.01).toFixed(2));
+  const creditsCost = parseFloat((rowCount * 0.015).toFixed(2));
   console.log('Row count:', rowCount);
   console.log('Credits cost:', creditsCost);
 
