@@ -249,7 +249,7 @@ try {
       console.log('✅ Status = Completed! Stopping poll.');
       isCompleted = true;
     } else {
-      console.log(`⏳ Still "${statsResult.request_status}" — waiting 3 seconds...`);
+      console.log(`⏳ Still "${statsResult.request_status}" — waiting 2 minitues...`);
       await new Promise(resolve => setTimeout(resolve, 120000));
     }
 
