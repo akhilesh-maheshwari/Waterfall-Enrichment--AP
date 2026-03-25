@@ -25,13 +25,10 @@ try {
 
   if (entries && entries.trim()) {
 
-    // User typed entries manually
     console.log('Processing manual entries...');
 
-    // Clean each line
     const lines = entries.trim().split('\n').map(l => l.trim()).filter(l => l);
 
-    // Validate each line has exactly 3 columns
     const validLines = [];
     for (const line of lines) {
       const cols = line.split(',');
@@ -42,7 +39,6 @@ try {
       }
     }
 
-    // Add header row + data rows
     csvContent = 'first_name,last_name,domain\n' + validLines.join('\n');
     rowCount   = validLines.length;
     fileName   = serviceTagName.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
@@ -52,10 +48,8 @@ try {
 
   } else if (uploadedFile && uploadedFile.trim()) {
 
-    // User provided a file URL
     console.log('Processing file URL...');
 
-    // Convert Google Sheets URL if needed
     let csvUrl = uploadedFile.trim();
     if (csvUrl.includes('docs.google.com/spreadsheets')) {
       const match = csvUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -65,11 +59,9 @@ try {
       }
     }
 
-    // Download the CSV
     const csvRes = await fetch(csvUrl);
     csvContent   = await csvRes.text();
 
-    // Count rows minus header
     const allRows = csvContent.trim().split('\n');
     rowCount = allRows.length - 1;
     fileName = serviceTagName.replace(/[^a-zA-Z0-9]/g, '_') + '_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
@@ -83,7 +75,6 @@ try {
 
   // ──────────────────────────────
   // 3. SAVE CSV TO GOOGLE DRIVE
-  // in Waterfall_Enrichment_AP folder
   // ──────────────────────────────
   console.log('Saving to Google Drive...');
   console.log('File name:', fileName);
@@ -121,16 +112,16 @@ try {
   const env    = Actor.getEnv();
   const userId = env.userId     || 'unknown';
   const runId  = env.actorRunId || 'unknown';
-  const now  = new Date();
-const time = now.toLocaleString('en-US', {
-  year  : 'numeric',
-  month : 'long',
-  day   : 'numeric',
-  hour  : 'numeric',
-  minute: '2-digit',
-  hour12: true,
-  timeZone: 'Asia/Kolkata'
-});
+  const now    = new Date();
+  const time   = now.toLocaleString('en-US', {
+    year    : 'numeric',
+    month   : 'long',
+    day     : 'numeric',
+    hour    : 'numeric',
+    minute  : '2-digit',
+    hour12  : true,
+    timeZone: 'Asia/Kolkata'
+  });
 
   console.log('User ID:', userId);
   console.log('Run ID :', runId);
@@ -151,16 +142,16 @@ const time = now.toLocaleString('en-US', {
       },
       body: JSON.stringify({
         fields: {
-          user_unique_id              : userId,
-          request_unique_id           : runId,
-          time_of_request             : time,
-          service_request_tag_name    : serviceTagName,
-          service_request_size        : rowCount,
-          service_cost: creditsCost,
-          service_request_url         : driveLink,
-          service_option_1            : 'pro',
-          service_name                : 'Waterfall Enrichment',
-          request_source              : 'Waterfall_enrichment_AP'
+          user_unique_id           : userId,
+          request_unique_id        : runId,
+          time_of_request          : time,
+          service_request_tag_name : serviceTagName,
+          service_request_size     : rowCount,
+          service_cost             : creditsCost,
+          service_request_url      : driveLink,
+          service_option_1         : 'pro',
+          service_name             : 'Waterfall Enrichment',
+          request_source           : 'Waterfall_enrichment_AP'
         }
       })
     }
@@ -176,7 +167,7 @@ const time = now.toLocaleString('en-US', {
   }
 
   // ──────────────────────────────
-  // 7. SEND TO WEBHOOK
+  // 7. SEND TO MAIN WEBHOOK
   // ──────────────────────────────
   console.log('Sending to Webhook...');
 
@@ -185,15 +176,15 @@ const time = now.toLocaleString('en-US', {
     {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
-     body   : JSON.stringify({
-        request_unique_id       : runId,
-        time_of_request         : time,
-        service_name            : 'Waterfall Enrichment',
-        service_option_1        : 'pro',
-        service_request_tag_name: serviceTagName,
-        size                    : rowCount,
-        service_request_url     : driveLink,
-        source                  : 'Waterfall_enrichment_AP'
+      body   : JSON.stringify({
+        request_unique_id        : runId,
+        time_of_request          : time,
+        service_name             : 'Waterfall Enrichment',
+        service_option_1         : 'pro',
+        service_request_tag_name : serviceTagName,
+        size                     : rowCount,
+        service_request_url      : driveLink,
+        source                   : 'Waterfall_enrichment_AP'
       })
     }
   );
@@ -202,77 +193,96 @@ const time = now.toLocaleString('en-US', {
   const webhookText = await webhookRes.text();
   console.log('Webhook response:', webhookText);
 
-   if (webhookRes.status === 200) {
-    console.log('✅ Webhook sent successfully!');
+  if (webhookRes.status !== 200) {
+    throw new Error('Main webhook error: ' + webhookText);
+  }
 
-    // ──────────────────────────────
-    // SEND REQUEST ID TO STATS WEBHOOK
-    // ──────────────────────────────
-    try {
-      const webhookResult = JSON.parse(webhookText);
-      const requestId = webhookResult.request_id || '';
+  console.log('✅ Main webhook sent successfully!');
 
-      if (requestId) {
-        console.log('Sending request ID to stats webhook...');
-        console.log('Request ID:', requestId);
+  // ──────────────────────────────
+  // 8. GET REQUEST ID
+  // ──────────────────────────────
+  const webhookResult = JSON.parse(webhookText);
+  const requestId     = webhookResult.request_id || '';
 
-        const statsRes = await fetch(
-          `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${requestId}`,
-          {
-            method : 'GET',
-            headers: { 'Content-Type': 'application/json' }
-          }
-        );
+  if (!requestId) {
+    throw new Error('⚠️ No request_id found in webhook response!');
+  }
 
-        console.log('Stats webhook status:', statsRes.status);
-        const statsText = await statsRes.text();
-        console.log('Stats webhook response:', statsText);
+  console.log('Request ID:', requestId);
 
-                if (statsRes.status === 200) {
-          console.log('✅ Stats webhook sent successfully!');
+  // ──────────────────────────────
+  // 9. POLL STATS WEBHOOK
+  // Every 3 sec jab tak "Completed" na aaye
+  // ──────────────────────────────
+  console.log('Polling stats webhook every 3 sec until Completed...');
 
-          // ──────────────────────────────
-          // SEND REQUEST ID TO OUTPUT WEBHOOK
-          // ──────────────────────────────
-          try {
-            console.log('Sending request ID to output webhook...');
+  let isCompleted = false;
+  let pollCount   = 0;
 
-            const outputRes = await fetch(
-              `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${requestId}`,
-              {
-                method : 'GET',
-                headers: { 'Content-Type': 'application/json' }
-              }
-            );
+  while (!isCompleted) {
 
-            console.log('Output webhook status:', outputRes.status);
-            const outputText = await outputRes.text();
-            console.log('Output webhook response:', outputText);
+    pollCount++;
+    console.log(`\n🔄 Poll attempt #${pollCount}...`);
 
-            if (outputRes.status === 200) {
-              console.log('✅ Output webhook sent successfully!');
-            } else {
-              console.log('❌ Output webhook error:', outputText);
-            }
-
-          } catch (outputErr) {
-            console.log('❌ Output webhook error:', outputErr.message);
-          }
-
-        } else {
-          console.log('❌ Stats webhook error:', statsText);
-        }
-
-      } else {
-        console.log('⚠️ No request_id found in webhook response!');
+    const statsRes  = await fetch(
+      `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${requestId}`,
+      {
+        method : 'GET',
+        headers: { 'Content-Type': 'application/json' }
       }
+    );
 
-    } catch (statsErr) {
-      console.log('❌ Stats webhook error:', statsErr.message);
+    console.log('Stats webhook status:', statsRes.status);
+    const statsText = await statsRes.text();
+    console.log('Stats webhook response:', statsText);
+
+    if (statsRes.status !== 200) {
+      console.log('❌ Stats webhook returned non-200, stopping poll.');
+      break;
+    }
+
+    const statsResult = JSON.parse(statsText);
+    console.log('Request status:', statsResult.request_status);
+
+    if (statsResult.request_status === 'Completed') {
+      console.log('✅ Status = Completed! Stopping poll.');
+      isCompleted = true;
+    } else {
+      console.log(`⏳ Still "${statsResult.request_status}" — waiting 3 seconds...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+  }
+
+  // ──────────────────────────────
+  // 10. CALL OUTPUT WEBHOOK
+  // (only after Completed)
+  // ──────────────────────────────
+  if (isCompleted) {
+
+    console.log('\nSending to output webhook...');
+
+    const outputRes  = await fetch(
+      `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${requestId}`,
+      {
+        method : 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    console.log('Output webhook status:', outputRes.status);
+    const outputText = await outputRes.text();
+    console.log('Output webhook response:', outputText);
+
+    if (outputRes.status === 200) {
+      console.log('✅ Output webhook sent successfully!');
+    } else {
+      console.log('❌ Output webhook error:', outputText);
     }
 
   } else {
-    console.log('❌ Webhook error:', webhookText);
+    console.log('⚠️ Skipping output webhook — request did not complete.');
   }
 
 } catch (err) {
