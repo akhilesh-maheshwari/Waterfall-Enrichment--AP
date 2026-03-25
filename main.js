@@ -74,40 +74,7 @@ try {
   }
 
   // ──────────────────────────────
-  // 3. SAVE CSV TO GOOGLE DRIVE
-  // ──────────────────────────────
-  console.log('Saving to Google Drive...');
-  console.log('File name:', fileName);
-
-  const gasRes = await fetch(
-    'https://script.google.com/macros/s/AKfycbyrkTBophapts2XV4ZA2HxmzUgB26wfhcZmm7qAz7wuRckW5suJSENN6GL_G4zeFx7I/exec',
-    {
-      method  : 'POST',
-      redirect: 'follow',
-      headers : { 'Content-Type': 'text/plain' },
-      body    : JSON.stringify({ csvContent, fileName })
-    }
-  );
-
-  const gasResult = JSON.parse(await gasRes.text());
-  console.log('Drive result:', JSON.stringify(gasResult));
-
-  if (gasResult.status !== 'success') {
-    throw new Error('Google Drive error: ' + gasResult.message);
-  }
-
-  const driveLink = gasResult.fileLink;
-  console.log('Drive link:', driveLink);
-
-  // ──────────────────────────────
-  // 4. CALCULATE COST
-  // ──────────────────────────────
-  const creditsCost = parseFloat((rowCount * 0.015).toFixed(2));
-  console.log('Row count:', rowCount);
-  console.log('Credits cost:', creditsCost);
-
-  // ──────────────────────────────
-  // 5. GET APIFY RUN DETAILS
+  // 3. GET APIFY RUN DETAILS
   // ──────────────────────────────
   const env    = Actor.getEnv();
   const userId = env.userId     || 'unknown';
@@ -128,161 +95,45 @@ try {
   console.log('Time   :', time);
 
   // ──────────────────────────────
-  // 6. SAVE TO AIRTABLE
+  // 4. CALCULATE COST
+  // $15 per 1000 inputs = $0.015 per row
   // ──────────────────────────────
-  console.log('Saving to Airtable...');
-
-  const atRes = await fetch(
-    'https://api.airtable.com/v0/appCuadMXrDqpfaDV/tblD3UXc3tYW0mOdT',
-    {
-      method : 'POST',
-      headers: {
-        'Authorization': 'Bearer pat4bRijwFM7m1t9u.c5fa218d14d840e4180f628656b63c163ce71bd8d01881d971ee96fe2d939dd8',
-        'Content-Type' : 'application/json'
-      },
-      body: JSON.stringify({
-        fields: {
-          user_unique_id           : userId,
-          request_unique_id        : runId,
-          time_of_request          : time,
-          service_request_tag_name : serviceTagName,
-          service_request_size     : rowCount,
-          service_cost             : creditsCost,
-          service_request_url      : driveLink,
-          service_option_1         : 'pro',
-          service_name             : 'Waterfall Enrichment',
-          request_source           : 'Waterfall_enrichment_AP'
-        }
-      })
-    }
-  );
-
-  const atResult = await atRes.json();
-  console.log('Airtable response:', JSON.stringify(atResult));
-
-  if (atResult.id) {
-    console.log('✅ Airtable record saved! ID:', atResult.id);
-  } else {
-    console.log('❌ Airtable error:', JSON.stringify(atResult));
-  }
+  const creditsCost = parseFloat((rowCount * 0.015).toFixed(2));
+  console.log('Row count  :', rowCount);
+  console.log('Credits cost: $', creditsCost);
 
   // ──────────────────────────────
-  // 7. SEND TO MAIN WEBHOOK
+  // 5. TRIGGER N8N
+  // Send everything to n8n
   // ──────────────────────────────
-  console.log('Sending to Webhook...');
+  console.log('Triggering n8n workflow...');
 
-  const webhookRes = await fetch(
-    'https://s1.boomerangserver.co.in/webhook/waterfall-live',
+  const n8nRes = await fetch(
+    'https://n8n-internal.chitlangia.co/webhook/waterfall-input', // ← paste your n8n webhook URL here
     {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify({
-        request_unique_id        : runId,
-        time_of_request          : time,
-        service_name             : 'Waterfall Enrichment',
-        service_option_1         : 'pro',
-        service_request_tag_name : serviceTagName,
-        size                     : rowCount,
-        service_request_url      : driveLink,
-        source                   : 'Waterfall_enrichment_AP'
+        userId,
+        runId,
+        time,
+        serviceTagName,
+        rowCount,
+        creditsCost,
+        csvContent,  // ← full CSV data for Google Drive
+        fileName     // ← file name for Google Drive
       })
     }
   );
 
-  console.log('Webhook status:', webhookRes.status);
-  const webhookText = await webhookRes.text();
-  console.log('Webhook response:', webhookText);
+  console.log('n8n trigger status:', n8nRes.status);
+  const n8nText = await n8nRes.text();
+  console.log('n8n response:', n8nText);
 
-  if (webhookRes.status !== 200) {
-    throw new Error('Main webhook error: ' + webhookText);
-  }
-
-  console.log('✅ Main webhook sent successfully!');
-
-  // ──────────────────────────────
-  // 8. GET REQUEST ID
-  // ──────────────────────────────
-  const webhookResult = JSON.parse(webhookText);
-  const requestId     = webhookResult.request_id || '';
-
-  if (!requestId) {
-    throw new Error('⚠️ No request_id found in webhook response!');
-  }
-
-  console.log('Request ID:', requestId);
-
-  // ──────────────────────────────
-  // 9. POLL STATS WEBHOOK
-  // Every 3 sec jab tak "Completed" na aaye
-  // ──────────────────────────────
-  console.log('Polling stats webhook every 2 min until Completed...');
-
-  let isCompleted = false;
-  let pollCount   = 0;
-
-  while (!isCompleted) {
-
-    pollCount++;
-    console.log(`\n🔄 Poll attempt #${pollCount}...`);
-
-    const statsRes  = await fetch(
-      `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${requestId}`,
-      {
-        method : 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-
-    console.log('Stats webhook status:', statsRes.status);
-    const statsText = await statsRes.text();
-    console.log('Stats webhook response:', statsText);
-
-    if (statsRes.status !== 200) {
-      console.log('❌ Stats webhook returned non-200, stopping poll.');
-      break;
-    }
-
-    const statsResult = JSON.parse(statsText);
-    console.log('Request status:', statsResult.request_status);
-
-    if (statsResult.request_status === 'Completed') {
-      console.log('✅ Status = Completed! Stopping poll.');
-      isCompleted = true;
-    } else {
-      console.log(`⏳ Still "${statsResult.request_status}" — waiting 2 minitues...`);
-      await new Promise(resolve => setTimeout(resolve, 120000));
-    }
-
-  }
-
-  // ──────────────────────────────
-  // 10. CALL OUTPUT WEBHOOK
-  // (only after Completed)
-  // ──────────────────────────────
-  if (isCompleted) {
-
-    console.log('\nSending to output webhook...');
-
-    const outputRes  = await fetch(
-      `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${requestId}`,
-      {
-        method : 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-
-    console.log('Output webhook status:', outputRes.status);
-    const outputText = await outputRes.text();
-    console.log('Output webhook response:', outputText);
-
-    if (outputRes.status === 200) {
-      console.log('✅ Output webhook sent successfully!');
-    } else {
-      console.log('❌ Output webhook error:', outputText);
-    }
-
+  if (n8nRes.status === 200) {
+    console.log('✅ n8n triggered successfully! n8n will handle the rest.');
   } else {
-    console.log('⚠️ Skipping output webhook — request did not complete.');
+    console.log('❌ n8n trigger failed:', n8nText);
   }
 
 } catch (err) {
