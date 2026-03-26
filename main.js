@@ -126,8 +126,17 @@ try {
   );
 
   console.log('n8n trigger status:', n8nRes.status);
-  const n8nText = await n8nRes.text();
-  console.log('n8n raw response:', n8nText);
+  const n8nData = await n8nRes.json();                         // ✅ parse JSON
+  console.log('n8n response:', JSON.stringify(n8nData));
+
+  // ✅ extract requestId and driveLink from Airtable record returned by n8n
+  const requestId = n8nData.fields?.request_unique_id || n8nData.request_unique_id || '';
+  const driveLink = n8nData.fields?.service_request_url || n8nData.service_request_url || '';
+
+  if (!requestId) throw new Error('No request_id returned from n8n!');
+
+  console.log('Request ID :', requestId);
+  console.log('Drive Link :', driveLink);
 
   // ──────────────────────────────
   // 6. POLL STATS WEBHOOK
