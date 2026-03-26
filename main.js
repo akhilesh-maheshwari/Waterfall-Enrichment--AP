@@ -103,66 +103,108 @@ try {
   // ──────────────────────────────
   // 5. TRIGGER N8N — STEP 1
   // Uploads CSV, creates Airtable record, submits to boomerang
-  // Returns { request_id, driveLink }
+  // n8n responds immediately with { request_id, driveLink }
+  // via "Respond to Webhook" node (before the Wait node)
+  // Timeout: 30 seconds (should respond instantly now)
   // ──────────────────────────────
   console.log('\nStep 1: Triggering n8n waterfall-input...');
 
-  const n8nRes = await fetch(
-    'https://n8n-internal.chitlangia.co/webhook/waterfall-input',
-    {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({
-        userId,
-        runId,
-        time,
-        serviceTagName,
-        rowCount,
-        creditsCost,
-        csvContent,
-        uploadedFile,
-        fileName
-      })
-    }
-  );
+  let n8nRes;
+  try {
+    n8nRes = await fetch(
+      'https://n8n-internal.chitlangia.co/webhook/waterfall-input',
+      {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal : AbortSignal.timeout(30000), // 30 seconds timeout
+        body   : JSON.stringify({
+          userId,
+          runId,
+          time,
+          serviceTagName,
+          rowCount,
+          creditsCost,
+          csvContent,
+          uploadedFile,
+          fileName
+        })
+      }
+    );
+  } catch (fetchErr) {
+    throw new Error(`Step 1 fetch failed: ${fetchErr.message}`);
+  }
 
   console.log('n8n step 1 status:', n8nRes.status);
-  const n8nData = await n8nRes.json();
+
+  // Check for non-200 status before parsing JSON
+  if (!n8nRes.ok) {
+    const rawText = await n8nRes.text();
+    throw new Error(`Step 1 failed with status ${n8nRes.status}. Response: ${rawText.slice(0, 200)}`);
+  }
+
+  let n8nData;
+  try {
+    n8nData = await n8nRes.json();
+  } catch (parseErr) {
+    const rawText = await n8nRes.text();
+    throw new Error(`Step 1 JSON parse failed. Raw response: ${rawText.slice(0, 200)}`);
+  }
+
   console.log('n8n step 1 response:', JSON.stringify(n8nData));
 
   const request_id = String(n8nData.request_id || '');
-  const driveLink   = n8nData.driveLink || '';
+  const driveLink  = n8nData.driveLink || '';
 
   if (!request_id) throw new Error('No request_id returned from n8n step 1!');
 
   console.log('Request ID :', request_id);
-  console.log('Drive Link   :', driveLink);
+  console.log('Drive Link :', driveLink);
 
   // ──────────────────────────────
   // 6. TRIGGER N8N — STEP 2
   // n8n polls boomerang every 2 min internally
   // Responds only when status = Completed
   // Returns { requestId, requestStatus, "Output Link" }
-  // NOTE: Set a long timeout — this can take 10-30+ minutes
+  // Timeout: 90 minutes (boomerang can take 30-60+ min)
   // ──────────────────────────────
   console.log('\nStep 2: Triggering n8n polling workflow...');
   console.log('Waiting for Completed status (this may take several minutes)...');
 
-  const pollRes = await fetch(
-    'https://n8n-internal.chitlangia.co/webhook/waterfall-status',  // ← REPLACE with your actual polling webhook URL
-    {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ request_id: request_id })
-    }
-  );
+  let pollRes;
+  try {
+    pollRes = await fetch(
+      'https://n8n-internal.chitlangia.co/webhook/waterfall-status',
+      {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal : AbortSignal.timeout(90 * 60 * 1000), // 90 minutes timeout
+        body   : JSON.stringify({ request_id: request_id })
+      }
+    );
+  } catch (fetchErr) {
+    throw new Error(`Step 2 fetch failed: ${fetchErr.message}`);
+  }
 
   console.log('n8n step 2 status:', pollRes.status);
-  const pollData = await pollRes.json();
+
+  // Check for non-200 status before parsing JSON
+  if (!pollRes.ok) {
+    const rawText = await pollRes.text();
+    throw new Error(`Step 2 failed with status ${pollRes.status}. Response: ${rawText.slice(0, 200)}`);
+  }
+
+  let pollData;
+  try {
+    pollData = await pollRes.json();
+  } catch (parseErr) {
+    const rawText = await pollRes.text();
+    throw new Error(`Step 2 JSON parse failed. Raw response: ${rawText.slice(0, 200)}`);
+  }
+
   console.log('n8n step 2 response:', JSON.stringify(pollData));
 
-  const outputLink     = pollData['Output Link']    || pollData.outputLink    || '';
-  const requestStatus  = pollData.requestStatus     || pollData.request_status || '';
+  const outputLink    = pollData['Output Link']    || pollData.outputLink    || '';
+  const requestStatus = pollData.requestStatus     || pollData.request_status || '';
 
   console.log('Request Status :', requestStatus);
   console.log('Output Link    :', outputLink);
@@ -185,9 +227,9 @@ try {
 
   console.log('\n✅ Final output saved!');
   console.log('Request ID   :', request_id);
-  console.log('Input Link     :', driveLink);
-  console.log('Output Link    :', outputLink);
-  console.log('Status         :', requestStatus);
+  console.log('Input Link   :', driveLink);
+  console.log('Output Link  :', outputLink);
+  console.log('Status       :', requestStatus);
 
 } catch (err) {
   console.log('❌ Error:', err.message);
