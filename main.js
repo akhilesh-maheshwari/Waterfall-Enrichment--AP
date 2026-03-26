@@ -26,7 +26,6 @@ try {
   if (entries && entries.trim()) {
 
     console.log('Processing manual entries...');
-
     const lines = entries.trim().split('\n').map(l => l.trim()).filter(l => l);
 
     const validLines = [];
@@ -49,8 +48,8 @@ try {
   } else if (uploadedFile && uploadedFile.trim()) {
 
     console.log('Processing file URL...');
-
     let csvUrl = uploadedFile.trim();
+
     if (csvUrl.includes('docs.google.com/spreadsheets')) {
       const match = csvUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (match) {
@@ -96,14 +95,14 @@ try {
 
   // ──────────────────────────────
   // 4. CALCULATE COST
-  // $15 per 1000 inputs = $0.015 per row
   // ──────────────────────────────
   const creditsCost = parseFloat((rowCount * 0.015).toFixed(3));
   console.log('Row count  :', rowCount);
   console.log('Credits cost: $', creditsCost);
 
   // ──────────────────────────────
-  // 5. TRIGGER N8N AND WAIT
+  // 5. TRIGGER N8N
+  // n8n responds with request_id + driveLink
   // ──────────────────────────────
   console.log('Triggering n8n workflow...');
 
@@ -130,36 +129,84 @@ try {
   const n8nResult = await n8nRes.json();
   console.log('n8n response:', JSON.stringify(n8nResult));
 
-  if (n8nRes.status === 200) {
-    console.log('✅ n8n triggered successfully!');
+  const requestId = n8nResult.request_id || '';
+  const driveLink = n8nResult.driveLink  || '';
 
-    // ──────────────────────────────
-    // 6. SAVE OUTPUT
-    // ──────────────────────────────
-    await Actor.pushData({
-      userId,
-      runId,
-      time,
-      serviceTagName,
-      rowCount,
-      creditsCost,
-      driveInputLink  : n8nResult.driveLink      || '',
-      driveOutputLink : n8nResult.webViewLink     || '',
-      requestId       : n8nResult.requestId       || '',
-      requestStatus   : n8nResult.requestStatus   || '',
-      totalEmailFound : n8nResult.totalEmailFound || ''
-    });
-
-    console.log('✅ Output saved!');
-    console.log('Request ID      :', n8nResult.requestId);
-    console.log('Request Status  :', n8nResult.requestStatus);
-    console.log('Drive Input Link:', n8nResult.driveLink);
-    console.log('Drive Output Link:', n8nResult.webViewLink);
-    console.log('Total Email Found:', n8nResult.totalEmailFound);
-
-  } else {
-    console.log('❌ n8n trigger failed:', JSON.stringify(n8nResult));
+  if (!requestId) {
+    throw new Error('❌ No request_id received from n8n!');
   }
+
+  console.log('✅ n8n triggered successfully!');
+  console.log('Request ID :', requestId);
+  console.log('Drive Link :', driveLink);
+
+  // ──────────────────────────────
+  // 6. POLL STATS WEBHOOK
+  // Every 2 min until Completed
+  // ──────────────────────────────
+  console.log('\nPolling stats webhook every 2 min until Completed...');
+
+  let isCompleted = false;
+  let pollCount   = 0;
+  let statsResult = {};
+
+  while (!isCompleted) {
+
+    pollCount++;
+    console.log(`\n🔄 Poll attempt #${pollCount}...`);
+
+    const statsRes = await fetch(
+      `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${requestId}`
+    );
+
+    statsResult = await statsRes.json();
+    console.log('Request status:', statsResult.request_status);
+    console.log('Stats:', JSON.stringify(statsResult));
+
+    if (statsResult.request_status === 'Completed') {
+      console.log('✅ Status = Completed!');
+      isCompleted = true;
+    } else {
+      console.log(`⏳ Still "${statsResult.request_status}" — waiting 2 minutes...`);
+      await new Promise(resolve => setTimeout(resolve, 120000));
+    }
+  }
+
+  // ──────────────────────────────
+  // 7. CALL OUTPUT WEBHOOK
+  // ──────────────────────────────
+  console.log('\nCalling output webhook...');
+
+  const outputRes    = await fetch(
+    `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${requestId}`
+  );
+  const outputResult = await outputRes.json();
+  console.log('Output response:', JSON.stringify(outputResult));
+
+  // ──────────────────────────────
+  // 8. SAVE FINAL OUTPUT
+  // ──────────────────────────────
+  await Actor.pushData({
+    userId,
+    runId,
+    time,
+    serviceTagName,
+    rowCount,
+    creditsCost,
+    requestId,
+    driveInputLink    : driveLink,
+    driveOutputLink   : outputResult.webViewLink             || '',
+    requestStatus     : statsResult.request_status           || '',
+    totalProspects    : statsResult.total_prospects          || '',
+    totalEmailFound   : statsResult.total_email_found        || '',
+    totalEmailNotFound: statsResult.total_email_not_found    || ''
+  });
+
+  console.log('\n✅ Final output saved!');
+  console.log('Drive Input Link  :', driveLink);
+  console.log('Drive Output Link :', outputResult.webViewLink);
+  console.log('Total Prospects   :', statsResult.total_prospects);
+  console.log('Total Email Found :', statsResult.total_email_found);
 
 } catch (err) {
   console.log('❌ Error:', err.message);
