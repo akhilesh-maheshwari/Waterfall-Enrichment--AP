@@ -107,7 +107,7 @@ try {
   console.log('Triggering n8n workflow...');
 
   const n8nRes = await fetch(
-    'https://n8n-internal.chitlangia.co/webhook/waterfall-input-v2',
+    'https://n8n-internal.chitlangia.co/webhook/waterfall-input',
     {
       method : 'POST',
       headers: { 'Content-Type': 'application/json' },
