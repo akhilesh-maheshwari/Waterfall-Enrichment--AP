@@ -126,19 +126,8 @@ try {
   );
 
   console.log('n8n trigger status:', n8nRes.status);
-  const n8nResult = await n8nRes.json();
-  console.log('n8n response:', JSON.stringify(n8nResult));
-
-  const requestId = n8nResult.request_id || '';
-  const driveLink = n8nResult.driveLink  || '';
-
-  if (!requestId) {
-    throw new Error('❌ No request_id received from n8n!');
-  }
-
-  console.log('✅ n8n triggered successfully!');
-  console.log('Request ID :', requestId);
-  console.log('Drive Link :', driveLink);
+  const n8nText = await n8nRes.text();
+  console.log('n8n raw response:', n8nText);
 
   // ──────────────────────────────
   // 6. POLL STATS WEBHOOK
