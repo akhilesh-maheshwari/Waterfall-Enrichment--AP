@@ -101,10 +101,11 @@ try {
   console.log('Credits cost: $', creditsCost);
 
   // ──────────────────────────────
-  // 5. TRIGGER N8N
-  // n8n responds with { request_id, driveLink }
+  // 5. TRIGGER N8N — STEP 1
+  // Uploads CSV, creates Airtable record, submits to boomerang
+  // Returns { request_id, driveLink }
   // ──────────────────────────────
-  console.log('Triggering n8n workflow...');
+  console.log('\nStep 1: Triggering n8n waterfall-input...');
 
   const n8nRes = await fetch(
     'https://n8n-internal.chitlangia.co/webhook/waterfall-input',
@@ -125,66 +126,49 @@ try {
     }
   );
 
-  console.log('n8n trigger status:', n8nRes.status);
+  console.log('n8n step 1 status:', n8nRes.status);
   const n8nData = await n8nRes.json();
-  console.log('n8n response:', JSON.stringify(n8nData));
+  console.log('n8n step 1 response:', JSON.stringify(n8nData));
 
-  const boomerangId = String(n8nData.request_id || '');
+  const request_id = String(n8nData.request_id || '');
   const driveLink   = n8nData.driveLink || '';
 
-  if (!boomerangId) throw new Error('No request_id returned from n8n!');
+  if (!request_id) throw new Error('No request_id returned from n8n step 1!');
 
-  console.log('Boomerang ID :', boomerangId);
+  console.log('Request ID :', request_id);
   console.log('Drive Link   :', driveLink);
 
   // ──────────────────────────────
-  // 6. POLL STATS WEBHOOK
-  // Every 2 min until Completed
+  // 6. TRIGGER N8N — STEP 2
+  // n8n polls boomerang every 2 min internally
+  // Responds only when status = Completed
+  // Returns { requestId, requestStatus, "Output Link" }
+  // NOTE: Set a long timeout — this can take 10-30+ minutes
   // ──────────────────────────────
-  console.log('\nWaiting 30 seconds before first poll...');
-  await new Promise(resolve => setTimeout(resolve, 30000));
+  console.log('\nStep 2: Triggering n8n polling workflow...');
+  console.log('Waiting for Completed status (this may take several minutes)...');
 
-  console.log('Polling boomerang stats every 2 min until Completed...');
-
-  let isCompleted = false;
-  let pollCount   = 0;
-  let statsResult = {};
-
-  while (!isCompleted) {
-
-    pollCount++;
-    console.log(`\n🔄 Poll attempt #${pollCount}...`);
-
-    const statsRes = await fetch(
-      `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${boomerangId}`
-    );
-
-    statsResult = await statsRes.json();
-    console.log('Request status:', statsResult.request_status);
-    console.log('Stats:', JSON.stringify(statsResult));
-
-    if (statsResult.request_status === 'Completed') {
-      console.log('✅ Status = Completed!');
-      isCompleted = true;
-    } else {
-      console.log(`⏳ Still "${statsResult.request_status}" — waiting 2 minutes...`);
-      await new Promise(resolve => setTimeout(resolve, 120000));
+  const pollRes = await fetch(
+    'https://n8n-internal.chitlangia.co/webhook/waterfall-status',  // ← REPLACE with your actual polling webhook URL
+    {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ request_id: request_id })
     }
-  }
-
-  // ──────────────────────────────
-  // 7. CALL OUTPUT WEBHOOK
-  // ──────────────────────────────
-  console.log('\nCalling output webhook...');
-
-  const outputRes    = await fetch(
-    `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${boomerangId}`
   );
-  const outputResult = await outputRes.json();
-  console.log('Output response:', JSON.stringify(outputResult));
+
+  console.log('n8n step 2 status:', pollRes.status);
+  const pollData = await pollRes.json();
+  console.log('n8n step 2 response:', JSON.stringify(pollData));
+
+  const outputLink     = pollData['Output Link']    || pollData.outputLink    || '';
+  const requestStatus  = pollData.requestStatus     || pollData.request_status || '';
+
+  console.log('Request Status :', requestStatus);
+  console.log('Output Link    :', outputLink);
 
   // ──────────────────────────────
-  // 8. SAVE FINAL OUTPUT
+  // 7. SAVE FINAL OUTPUT
   // ──────────────────────────────
   await Actor.pushData({
     userId,
@@ -193,21 +177,17 @@ try {
     serviceTagName,
     rowCount,
     creditsCost,
-    boomerangId,
-    driveInputLink     : driveLink,
-    driveOutputLink    : outputResult.webViewLink          || outputResult.output_sheet_url || '',
-    requestStatus      : statsResult.request_status        || '',
-    totalProspects     : statsResult.total_prospects       || '',
-    totalEmailFound    : statsResult.total_email_found     || '',
-    totalEmailNotFound : statsResult.total_email_not_found || ''
+    request_id,
+    driveInputLink  : driveLink,
+    driveOutputLink : outputLink,
+    requestStatus
   });
 
   console.log('\n✅ Final output saved!');
-  console.log('Boomerang ID      :', boomerangId);
-  console.log('Drive Input Link  :', driveLink);
-  console.log('Drive Output Link :', outputResult.webViewLink || outputResult.output_sheet_url);
-  console.log('Total Prospects   :', statsResult.total_prospects);
-  console.log('Total Email Found :', statsResult.total_email_found);
+  console.log('Request ID   :', request_id);
+  console.log('Input Link     :', driveLink);
+  console.log('Output Link    :', outputLink);
+  console.log('Status         :', requestStatus);
 
 } catch (err) {
   console.log('❌ Error:', err.message);
