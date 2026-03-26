@@ -136,7 +136,6 @@ try {
 
   console.log('n8n step 1 status:', n8nRes.status);
 
-  // Read body ONCE only
   const n8nText = await n8nRes.text();
   console.log('n8n step 1 raw response:', n8nText);
 
@@ -163,7 +162,7 @@ try {
 
   // ──────────────────────────────
   // 6. POLL BOOMERANG DIRECTLY — STEP 2
-  // Polls Boomerang every 2 min until status = Completed
+  // Polls Boomerang every 2 min until request_status = Completed
   // Infinite polling — no timeout, runs until done
   // ──────────────────────────────
   console.log('\nStep 2: Polling Boomerang directly for status...');
@@ -171,7 +170,6 @@ try {
 
   const POLL_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
-  let outputLink    = '';
   let requestStatus = '';
   let attempts      = 0;
 
@@ -186,7 +184,7 @@ try {
         `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${request_id}`,
         {
           method : 'GET',
-          signal : AbortSignal.timeout(15000) // 15 sec per poll request
+          signal : AbortSignal.timeout(15000) // 15 sec per poll
         }
       );
     } catch (fetchErr) {
@@ -196,7 +194,6 @@ try {
     }
 
     const boomerangText = await boomerangRes.text();
-    console.log(`Boomerang raw response (attempt ${attempts}):`, boomerangText);
 
     let boomerangData;
     try {
@@ -207,32 +204,43 @@ try {
       continue;
     }
 
+    // Boomerang uses snake_case: request_status
     requestStatus = boomerangData.request_status || boomerangData.requestStatus || boomerangData.status || '';
-    outputLink    = boomerangData['Output Link'] || boomerangData.webViewLink || boomerangData.outputLink || '';
 
-    console.log(`Status      : ${requestStatus}`);
-    console.log(`Output Link : ${outputLink}`);
+    const emailFound    = boomerangData.total_email_found    || 0;
+    const emailNotFound = boomerangData.total_email_not_found || 0;
+
+    // Only log fields that have meaningful values
+    if (requestStatus)   console.log(`Status           : ${requestStatus}`);
+    if (emailFound)      console.log(`Emails Found     : ${emailFound}`);
+    if (emailNotFound)   console.log(`Emails Not Found : ${emailNotFound}`);
 
     if (requestStatus === 'Completed') {
-      console.log('Boomerang processing complete!');
+      console.log('✅ Boomerang processing complete!');
       break;
     }
 
-    console.log(`Not completed yet (status: ${requestStatus}), waiting 2 minutes...`);
+    if (requestStatus) {
+      console.log(`Waiting 2 minutes... (${requestStatus})`);
+    } else {
+      console.log('No status returned yet, retrying in 2 min...');
+    }
+
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
   }
 
   // ──────────────────────────────
   // 7. TRIGGER N8N — STEP 3
-  // Sends final outputLink + all details back to n8n
-  // n8n output webhook updates Airtable / notifies user
+  // Sends request_id + status to n8n output webhook
+  // n8n fetches output file from Boomerang/Drive and returns outputLink
   // Timeout: 30 seconds
   // ──────────────────────────────
   console.log('\nStep 3: Sending output to n8n output webhook...');
 
-  let outputRes;
+  let outputLink = '';
+
   try {
-    outputRes = await fetch(
+    const outputRes  = await fetch(
       'https://n8n-internal.chitlangia.co/webhook/waterfall-output',
       {
         method : 'POST',
@@ -246,19 +254,29 @@ try {
           rowCount,
           creditsCost,
           request_id,
-          driveInputLink  : driveLink,
-          driveOutputLink : outputLink,
-          requestStatus
+          requestStatus,
+          driveInputLink : driveLink
         })
       }
     );
 
     const outputText = await outputRes.text();
     console.log('n8n step 3 status:', outputRes.status);
-    console.log('n8n step 3 response:', outputText);
+    console.log('n8n step 3 raw response:', outputText);
+
+    if (outputRes.ok) {
+      try {
+        const outputData = JSON.parse(outputText);
+        outputLink = outputData.driveOutputLink || outputData['Output Link'] || outputData.outputLink || outputData.webViewLink || '';
+        if (outputLink) console.log('Output Link:', outputLink);
+      } catch (e) {
+        console.log('Step 3 JSON parse failed, continuing...');
+      }
+    } else {
+      console.log(`Warning: Step 3 returned status ${outputRes.status}, continuing...`);
+    }
 
   } catch (fetchErr) {
-    // Don't throw — output is already done, just log warning
     console.log(`Warning: Step 3 fetch failed: ${fetchErr.message}`);
     console.log('Continuing to save output anyway...');
   }
@@ -282,7 +300,7 @@ try {
   console.log('\n✅ Final output saved!');
   console.log('Request ID   :', request_id);
   console.log('Input Link   :', driveLink);
-  console.log('Output Link  :', outputLink);
+  if (outputLink) console.log('Output Link  :', outputLink);
   console.log('Status       :', requestStatus);
 
 } catch (err) {
