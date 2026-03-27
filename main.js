@@ -102,12 +102,10 @@ try {
 
   // ──────────────────────────────
   // 5. TRIGGER N8N — STEP 1
-  // Uploads CSV, creates Airtable record, submits to Boomerang
-  // n8n responds immediately with { request_id, driveLink }
-  // via "Respond to Webhook" node (before the Wait node)
-  // Timeout: 30 seconds
   // ──────────────────────────────
   console.log('\nStep 1: Triggering n8n waterfall-input...');
+
+  const boomerangInputUrl = 'https://s1.boomerangserver.co.in/webhook/waterfall-live';
 
   let n8nRes;
   try {
@@ -116,7 +114,7 @@ try {
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal : AbortSignal.timeout(30000), // 30 seconds
+        signal : AbortSignal.timeout(30000),
         body   : JSON.stringify({
           userId,
           runId,
@@ -127,6 +125,7 @@ try {
           csvContent,
           uploadedFile,
           fileName,
+          boomerangInputUrl,
           service_option_1         : 'pro',
           service_name             : 'Waterfall Enrichment',
           request_source           : 'Waterfall_enrichment_AP'
@@ -165,13 +164,11 @@ try {
 
   // ──────────────────────────────
   // 6. POLL BOOMERANG DIRECTLY — STEP 2
-  // Polls Boomerang every 2 min until request_status = Completed
-  // Infinite polling — no timeout, runs until done
   // ──────────────────────────────
   console.log('\nStep 2: Polling Boomerang directly for status...');
   console.log('Polling every 2 minutes until Completed...');
 
-  const POLL_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+  const POLL_INTERVAL_MS = 2 * 60 * 1000;
 
   let requestStatus = '';
   let attempts      = 0;
@@ -187,7 +184,7 @@ try {
         `https://s1.boomerangserver.co.in/webhook/waterfall-request-stats?request_id=${request_id}`,
         {
           method : 'GET',
-          signal : AbortSignal.timeout(15000) // 15 sec per poll
+          signal : AbortSignal.timeout(15000)
         }
       );
     } catch (fetchErr) {
@@ -207,13 +204,11 @@ try {
       continue;
     }
 
-    // Boomerang uses snake_case: request_status
     requestStatus = boomerangData.request_status || boomerangData.requestStatus || boomerangData.status || '';
 
     const emailFound    = boomerangData.total_email_found    || 0;
     const emailNotFound = boomerangData.total_email_not_found || 0;
 
-    // Only log fields that have meaningful values
     if (requestStatus)   console.log(`Status           : ${requestStatus}`);
     if (emailFound)      console.log(`Emails Found     : ${emailFound}`);
     if (emailNotFound)   console.log(`Emails Not Found : ${emailNotFound}`);
@@ -234,11 +229,11 @@ try {
 
   // ──────────────────────────────
   // 7. TRIGGER N8N — STEP 3
-  // Sends request_id + status to n8n output webhook
-  // n8n fetches output file from Boomerang/Drive and returns outputLink
-  // Timeout: 30 seconds
   // ──────────────────────────────
   console.log('\nStep 3: Sending output to n8n output webhook...');
+
+  // Now request_id is known, build the output URL with it
+  const boomerangOutputUrlFinal = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
 
   let outputLink = '';
 
@@ -248,7 +243,7 @@ try {
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal : AbortSignal.timeout(30000), // 30 seconds
+        signal : AbortSignal.timeout(30000),
         body   : JSON.stringify({
           userId,
           runId,
@@ -258,7 +253,8 @@ try {
           creditsCost,
           request_id,
           requestStatus,
-          driveInputLink : driveLink
+          driveInputLink   : driveLink,
+          boomerangOutputUrl : boomerangOutputUrlFinal
         })
       }
     );
