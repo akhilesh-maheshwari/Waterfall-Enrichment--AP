@@ -162,6 +162,7 @@ try {
   const masterFileUrl     = wf1Data.masterFileUrl     || '';
   const total_batches     = parseInt(wf1Data.total_batches || '0');
   const batchFolderId     = wf1Data.batchFolderId     || '';
+  const nocodb_master_id  = wf1Data.nocodb_master_id  || '';
 
   if (!request_unique_id) throw new Error('No request_unique_id returned from Step 1!');
 
@@ -172,16 +173,54 @@ try {
 
   // ──────────────────────────────
   // 6. STEP 2 — PROCESS BATCHES
-  //    Workflow 1 already triggered Workflow 2
-  //    Apify gets batchJobs from Workflow 1 response
+  //    Apify calls Workflow 2 directly
   //    Then calls Workflow 3 for each batch
   // ──────────────────────────────
   let completedBatches = 0;
   let round            = 0;
   let allOutputLinks   = [];
+  let batchJobs        = [];
 
-  // batchJobs already returned from Workflow 1
-  let batchJobs = wf1Data.batchJobs || [];
+  // Helper function to call Workflow 2
+  const getNextBatchJobs = async () => {
+    try {
+      const wf2Res = await fetch(
+        'https://n8n-internal.chitlangia.co/webhook/2d274972-e90d-4f14-bb58-57b7ea40abdf',
+        {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal : AbortSignal.timeout(60000),
+          body   : JSON.stringify({
+            request_unique_id,
+            batchFolderId,
+            userId,
+            runId,
+            time,
+            serviceTagName,
+            rowCount,
+            creditsCost,
+            nocodb_master_id,
+            boomerangInputUrl,
+            service_option_1 : serviceOption1,
+            service_name     : serviceName,
+            request_source   : requestSource
+          })
+        }
+      );
+      const wf2Text = await wf2Res.text();
+      console.log('n8n step 2 status  :', wf2Res.status);
+      console.log('n8n step 2 response:', wf2Text);
+      if (!wf2Text || wf2Text.trim() === '') return [];
+      const wf2Data = JSON.parse(wf2Text);
+      return wf2Data.batchJobs || [];
+    } catch (err) {
+      console.log('Workflow 2 call failed:', err.message);
+      return [];
+    }
+  };
+
+  // Get first round of batchJobs
+  batchJobs = await getNextBatchJobs();
 
   while (true) {
 
@@ -322,10 +361,8 @@ try {
     });
 
     if (completedBatches < total_batches) {
-      console.log(`\n⏳ ${total_batches - completedBatches} batch(es) remaining. Workflow 2 will handle next round...`);
-      // Workflow 1 triggers Workflow 2 for next round automatically via n8n
-      // batchJobs will come from Workflow 1 response on next iteration
-      batchJobs = wf1Data.batchJobs || [];
+      console.log(`\n⏳ ${total_batches - completedBatches} batch(es) remaining. Getting next round...`);
+      batchJobs = await getNextBatchJobs();
     }
   }
 
