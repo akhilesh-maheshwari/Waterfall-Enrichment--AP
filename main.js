@@ -119,7 +119,7 @@ try {
   let wf1Res;
   try {
     wf1Res = await fetch(
-      'https://n8n-internal.chitlangia.co/webhook/11fd4929-f376-40f8-9d6f-71f1b3587b3d',
+      'https://frontend.boomerangserver.co.in/webhook/11fd4929-f376-40f8-9d6f-71f1b3587b3d',
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -185,7 +185,7 @@ try {
   const getNextBatchJobs = async () => {
     try {
       const wf2Res = await fetch(
-        'https://n8n-internal.chitlangia.co/webhook/2d274972-e90d-4f14-bb58-57b7ea40abdf',
+        'https://frontend.boomerangserver.co.in/webhook/2d274972-e90d-4f14-bb58-57b7ea40abdf',
         {
           method : 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -251,7 +251,7 @@ try {
           while (!statusData) {
             try {
               const statusRes = await fetch(
-                'https://n8n-internal.chitlangia.co/webhook/batch-status-copy',
+                'https://frontend.boomerangserver.co.in/webhook/batch-status-copy',
                 {
                   method : 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -275,10 +275,10 @@ try {
               );
               const statusText = await statusRes.text();
 
-              // If 504 or HTML response → stop
+              // If 504 or HTML response → stop everything
               if (statusText.includes('<html>') || statusText.includes('504')) {
                 console.log(`  ❌ Batch ${batch_number} — 504 Gateway Timeout, please try again.`);
-                statusData = { status: 'Failed' };
+                statusData = { status: 'GatewayTimeout' };
                 break;
               }
 
@@ -294,6 +294,13 @@ try {
       })
     );
 
+    // ── 2c. Check if any batch had GatewayTimeout — stop everything
+    const hasTimeout = batchStatusResults.some(r => r.status === 'GatewayTimeout');
+    if (hasTimeout) {
+      console.log('\n❌ 504 Gateway Timeout — stopping. Please try again.');
+      break;
+    }
+
     // ── 2c. Call Workflow 4 (waterfall-output) for each completed batch ──
     const batchResults = [];
 
@@ -305,7 +312,7 @@ try {
       let outputLink = '';
       try {
         const outputRes = await fetch(
-          'https://n8n-internal.chitlangia.co/webhook/waterfall-output-copy',
+          'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
           {
             method : 'POST',
             headers: { 'Content-Type': 'application/json' },
