@@ -7,7 +7,7 @@
   "dockerfile": "./Dockerfile",
   "defaultRunOptions": {
     "build": "latest",
-    "timeoutSecs": 0,
+    "timeoutSecs": 500,
     "memoryMbytes": 1024
   }
 }
