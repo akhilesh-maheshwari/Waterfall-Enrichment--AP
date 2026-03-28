@@ -248,7 +248,7 @@ try {
     }
 
     // ── 2b. Poll Boomerang stats for each batch ──
-    console.log(`\nPolling Boomerang status every 30 seconds...`);
+    console.log(`\nPolling Boomerang status every 2 minutes...`);
 
     const POLL_INTERVAL_MS = 2 * 60 * 1000;
     const batchResults = [];
