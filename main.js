@@ -119,7 +119,7 @@ try {
   let wf1Res;
   try {
     wf1Res = await fetch(
-      'https://n8n-internal.chitlangia.co/webhook/master_webhook',
+      'https://n8n-internal.chitlangia.co/webhook/11fd4929-f376-40f8-9d6f-71f1b3587b3d',
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,7 +191,7 @@ try {
     let wf2Res;
     try {
       wf2Res = await fetch(
-        'https://n8n-internal.chitlangia.co/webhook/batch-process',
+        'https://n8n-internal.chitlangia.co/webhook/2d274972-e90d-4f14-bb58-57b7ea40abdf',
         {
           method : 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -308,7 +308,7 @@ try {
       let outputLink = '';
       try {
         const outputRes = await fetch(
-          'https://n8n-internal.chitlangia.co/webhook/waterfall-output',
+          'https://n8n-internal.chitlangia.co/webhook/waterfall-output-copy',
           {
             method : 'POST',
             headers: { 'Content-Type': 'application/json' },
