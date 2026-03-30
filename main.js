@@ -315,7 +315,7 @@ try {
           continue;
         }
 
-        const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
+        const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output`;
         let outputLink = '';
 
         try {
@@ -336,7 +336,8 @@ try {
                 requestStatus    : result.status,
                 driveInputLink,
                 boomerangOutputUrl,
-                nocodb_id,
+                nocodb_master_id,
+                batch_id,
                 batch_number,
                 request_unique_id,
                 batchFolderId
