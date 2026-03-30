@@ -315,7 +315,7 @@ try {
           continue;
         }
 
-        const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output`;
+        const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
         let outputLink = '';
 
         try {
