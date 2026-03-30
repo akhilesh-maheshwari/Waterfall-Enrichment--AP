@@ -202,6 +202,7 @@ try {
             rowCount,
             creditsCost,
             nocodb_master_id,
+            batch_id,
             boomerangInputUrl,
             service_option_1 : serviceOption1,
             service_name     : serviceName,
