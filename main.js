@@ -45,7 +45,7 @@ try {
     }
 
     const hasThreeCols = validLines[0] && validLines[0].split(',').length === 3;
-    const header = hasThreeCols ? 'first_name,last_name,organization_website_url' : 'url';
+    const header = hasThreeCols ? 'first_name,last_name,domain' : 'url';
 
     csvContent = header + '\n' + validLines.join('\n');
     rowCount   = validLines.length;
