@@ -258,7 +258,8 @@ try {
                   body   : JSON.stringify({
                     request_id,
                     batch_number,
-                    nocodb_id,
+                    nocodb_master_id,
+                    batch_id,
                     driveInputLink,
                     request_unique_id,
                     batchFolderId,
