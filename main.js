@@ -38,14 +38,17 @@ try {
     for (const line of lines) {
       const cols = line.split(',');
       if (cols.length === 3) {
+        // Add empty email column
+        validLines.push(cols.map(c => c.trim()).join(',') + ',');
+      } else if (cols.length === 4) {
         validLines.push(cols.map(c => c.trim()).join(','));
       } else {
         validLines.push(line.trim());
       }
     }
 
-    const hasThreeCols = validLines[0] && validLines[0].split(',').length === 3;
-    const header = hasThreeCols ? 'first_name,last_name,domain' : 'url';
+    const hasNameCols = validLines[0] && validLines[0].split(',').length >= 3;
+    const header = hasNameCols ? 'first_name,last_name,organization_website_url,email' : 'url';
 
     csvContent = header + '\n' + validLines.join('\n');
     rowCount   = validLines.length;
