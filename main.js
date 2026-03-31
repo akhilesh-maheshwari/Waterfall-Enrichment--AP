@@ -241,7 +241,7 @@ try {
           console.log(`  ⏳ Batch ${batch_number} — Polling status (request_id: ${request_id})...`);
 
           const maxAttempts  = 10;     // CHANGED: 10 × 2min = 20 minutes max
-          const pollInterval = 240000; // CHANGED: 2 minutes between polls
+          const pollInterval = 180000; // CHANGED: 2 minutes between polls
 
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -282,7 +282,7 @@ try {
                 return { ...statusData, job };
               }
 
-              console.log(`  🔄 Batch ${batch_number} still processing, attempt ${attempt}/${maxAttempts}. Waiting 4 min...`);
+              console.log(`  🔄 Batch ${batch_number} still processing, attempt ${attempt}/${maxAttempts}. Waiting 3 min...`);
               await new Promise(r => setTimeout(r, pollInterval));
 
             } catch (err) {
