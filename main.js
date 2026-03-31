@@ -167,7 +167,6 @@ try {
   const masterFileUrl     = wf1Data.masterFileUrl     || '';
   const total_batches     = parseInt(wf1Data.total_batches || '0');
   const batchFolderId     = wf1Data.batchFolderId     || '';
-  const nocodb_master_id  = wf1Data.nocodb_master_id  || '';
   const batch_id          = wf1Data.batch_id          || '';
 
   if (!request_unique_id) throw new Error('No request_unique_id returned from Step 1!');
@@ -202,8 +201,6 @@ try {
             serviceTagName,
             rowCount,
             creditsCost,
-            nocodb_master_id,
-            batch_id,
             boomerangInputUrl,
             service_option_1 : serviceOption1,
             service_name     : serviceName,
@@ -258,8 +255,6 @@ try {
                   body   : JSON.stringify({
                     request_id,
                     batch_number,
-                    nocodb_master_id,
-                    batch_id,
                     driveInputLink,
                     request_unique_id,
                     batchFolderId,
@@ -336,8 +331,6 @@ try {
                 requestStatus    : result.status,
                 driveInputLink,
                 boomerangOutputUrl,
-                nocodb_master_id,
-                batch_id,
                 batch_number,
                 request_unique_id,
                 batchFolderId
