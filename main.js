@@ -282,7 +282,7 @@ try {
                 return { ...statusData, job };
               }
 
-              console.log(`  🔄 Batch ${batch_number} still processing, attempt ${attempt}/${maxAttempts}. Waiting 2 min...`);
+              console.log(`  🔄 Batch ${batch_number} still processing, attempt ${attempt}/${maxAttempts}. Waiting 4 min...`);
               await new Promise(r => setTimeout(r, pollInterval));
 
             } catch (err) {
