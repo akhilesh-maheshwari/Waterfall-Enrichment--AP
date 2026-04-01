@@ -113,7 +113,68 @@ try {
   await Actor.charge({ eventName: serviceOption1, count: rowCount });
 
   // ──────────────────────────────
-  // 5. STEP 1 — TRIGGER WORKFLOW 1
+  // 5. ABORT HANDLER
+  // ──────────────────────────────
+
+  // These are declared with let so the abort handler can access
+  // them even after Step 1 fills them in later
+  let request_unique_id = '';
+  let batchFolderId     = '';
+
+  // Tracks which batches are currently being polled
+  const inProgressBatches = new Map(); // request_id → { batch_number, driveInputLink, job }
+
+  Actor.on('aborting', async () => {
+    console.log('\n🛑 Actor aborted! Sending Aborted status to webhook for all in-progress batches...');
+    console.log(`   In-progress batches : ${inProgressBatches.size}`);
+
+    if (inProgressBatches.size === 0) {
+      console.log('   No batches were in progress. Nothing to notify.');
+      return;
+    }
+
+    await Promise.all(
+      [...inProgressBatches.entries()].map(async ([request_id, { batch_number, driveInputLink, job }]) => {
+        try {
+          console.log(`   🔴 Sending Aborted for Batch ${batch_number} (${request_id})...`);
+          await fetch(
+            'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
+            {
+              method : 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal : AbortSignal.timeout(30000),
+              body   : JSON.stringify({
+                userId,
+                runId,
+                time,
+                serviceTagName,
+                rowCount          : job.batch_size || rowCount,
+                creditsCost,
+                request_id,
+                requestStatus     : 'Aborted',
+                driveInputLink,
+                boomerangOutputUrl: `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`,
+                batch_number,
+                request_unique_id,
+                batchFolderId,
+                webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
+                executionMode     : 'production',
+                reason            : 'Actor was manually aborted'
+              })
+            }
+          );
+          console.log(`   ✅ Batch ${batch_number} — Aborted status sent.`);
+        } catch (err) {
+          console.log(`   ⚠️ Batch ${batch_number} — Failed to send abort notification: ${err.message}`);
+        }
+      })
+    );
+
+    console.log('✅ All abort notifications sent.');
+  });
+
+  // ──────────────────────────────
+  // 6. STEP 1 — TRIGGER WORKFLOW 1
   // ──────────────────────────────
   console.log('\n════════════════════════════════════');
   console.log('Step 1 : Setting up master & batches');
@@ -161,10 +222,11 @@ try {
     throw new Error(`Step 1 JSON parse failed: ${wf1Text.slice(0, 200)}`);
   }
 
-  const request_unique_id = wf1Data.request_unique_id || '';
+  // ── Assign to outer-scope lets so abort handler can use them ──
+  request_unique_id       = wf1Data.request_unique_id || '';
+  batchFolderId           = wf1Data.batchFolderId     || '';
   const masterFileUrl     = wf1Data.masterFileUrl     || '';
   const total_batches     = parseInt(wf1Data.total_batches || '0');
-  const batchFolderId     = wf1Data.batchFolderId     || '';
   const batch_id          = wf1Data.batch_id          || '';
 
   if (!request_unique_id) throw new Error('No request_unique_id returned from Step 1!');
@@ -175,7 +237,7 @@ try {
   console.log('   Total Batches :', total_batches);
 
   // ──────────────────────────────
-  // 6. STEP 2 — PROCESS BATCHES
+  // 7. STEP 2 — PROCESS BATCHES
   // ──────────────────────────────
   let round           = 0;
   let allOutputLinks  = [];
@@ -235,6 +297,16 @@ try {
 
     console.log(`\n  Sending ${batchJobs.length} batches to n8n for status checking...`);
 
+    // ── Mark all batches in this round as in-progress ──
+    for (const job of batchJobs) {
+      inProgressBatches.set(job.request_id, {
+        batch_number   : job.batch_number,
+        driveInputLink : job.driveInputLink,
+        job
+      });
+      console.log(`  🟡 Batch ${job.batch_number} (${job.request_id}) marked as in-progress.`);
+    }
+
     const batchStatusResults = await Promise.all(
       batchJobs.map(async (job) => {
         const { request_id, driveInputLink, batch_number } = job;
@@ -279,6 +351,8 @@ try {
             console.log(`  ✅ Batch ${batch_number} status:`, statusData.status);
 
             if (statusData.status === 'Completed' || statusData.status === 'Failed') {
+              // ── Done — remove from in-progress ──
+              inProgressBatches.delete(request_id);
               return { ...statusData, job };
             }
 
@@ -291,8 +365,10 @@ try {
           }
         }
 
-        // notify webhook on timeout → n8n updates Airtable to Error
+        // ── Timed out — notify Error and remove from in-progress ──
         console.log(`  ❌ Batch ${batch_number} timed out after ${maxAttempts} attempts.`);
+        inProgressBatches.delete(request_id);
+
         try {
           await fetch(
             'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
@@ -407,7 +483,6 @@ try {
 
     allBatchResults = allBatchResults.concat(batchResults);
 
-    // CHANGED: push each batch row immediately to dataset as it completes
     for (const b of batchResults) {
       await Actor.pushData({
         run_id        : runId,
@@ -420,7 +495,6 @@ try {
       console.log(`  💾 Batch ${b.batch_number} saved to dataset.`);
     }
 
-    // always call Workflow 2 again — stop when it returns empty
     console.log(`\n⏳ Checking for next pending batch...`);
     batchJobs = await getNextBatchJobs();
 
@@ -431,7 +505,7 @@ try {
   }
 
   // ──────────────────────────────
-  // 7. FINAL SUMMARY
+  // 8. FINAL SUMMARY
   // ──────────────────────────────
   const completedCount = allBatchResults.filter(b => b.status === 'Completed').length;
   const errorCount     = allBatchResults.filter(b => b.status !== 'Completed').length;
