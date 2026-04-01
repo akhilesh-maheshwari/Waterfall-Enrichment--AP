@@ -177,10 +177,9 @@ try {
   // ──────────────────────────────
   // 6. STEP 2 — PROCESS BATCHES
   // ──────────────────────────────
-  let completedBatches = 0;
-  let round            = 0;
-  let allOutputLinks   = [];
-  let allBatchResults  = [];
+  let round           = 0;
+  let allOutputLinks  = [];
+  let allBatchResults = [];
 
   const getNextBatchJobs = async () => {
     try {
@@ -221,148 +220,86 @@ try {
   let batchJobs = await getNextBatchJobs();
 
   while (!batchJobs || batchJobs.length === 0) {
-    console.log('⏳ No slots available (backend full). Waiting 2 mins before retry...');
+    console.log('⏳ No pending batches yet. Waiting 2 mins before retry...');
     await new Promise(r => setTimeout(r, 2 * 60 * 1000));
     batchJobs = await getNextBatchJobs();
   }
 
-  if (batchJobs && batchJobs.length > 0) {
+  while (batchJobs && batchJobs.length > 0) {
 
-    while (true) {
+    round++;
+    console.log(`\n════════════════════════════════════`);
+    console.log(`Step 2 : Round ${round} — ${batchJobs.length} batch(es)`);
+    console.log(`         Processed so far : ${allBatchResults.length}/${total_batches}`);
+    console.log(`════════════════════════════════════`);
 
-      round++;
-      console.log(`\n════════════════════════════════════`);
-      console.log(`Step 2 : Round ${round} — ${batchJobs.length} batch(es)`);
-      console.log(`         Completed : ${completedBatches}/${total_batches}`);
-      console.log(`         Remaining : ${total_batches - completedBatches}`);
-      console.log(`════════════════════════════════════`);
+    console.log(`\n  Sending ${batchJobs.length} batches to n8n for status checking...`);
 
-      console.log(`\n  Sending ${batchJobs.length} batches to n8n for status checking...`);
+    const batchStatusResults = await Promise.all(
+      batchJobs.map(async (job) => {
+        const { request_id, driveInputLink, batch_number } = job;
+        console.log(`  ⏳ Batch ${batch_number} — Polling status (request_id: ${request_id})...`);
 
-      const batchStatusResults = await Promise.all(
-        batchJobs.map(async (job) => {
-          const { request_id, driveInputLink, batch_number } = job;
-          console.log(`  ⏳ Batch ${batch_number} — Polling status (request_id: ${request_id})...`);
+        const maxAttempts  = 10;
+        const pollInterval = 180000;
 
-          const maxAttempts  = 10;
-          const pollInterval = 180000;
-
-          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-              const statusRes = await fetch(
-                'https://frontend.boomerangserver.co.in/webhook/batch-status-copy',
-                {
-                  method : 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  signal : AbortSignal.timeout(120000),
-                  body   : JSON.stringify({
-                    request_id,
-                    batch_number,
-                    driveInputLink,
-                    request_unique_id,
-                    batchFolderId,
-                    boomerangStatUrl,
-                    userId,
-                    runId,
-                    time,
-                    serviceTagName,
-                    rowCount   : job.batch_size || rowCount,
-                    creditsCost
-                  })
-                }
-              );
-              const statusText = await statusRes.text();
-
-              if (statusText.includes('<html>') || statusText.includes('504')) {
-                console.log(`  ⚠️ Batch ${batch_number} — 504, retrying (${attempt}/${maxAttempts})...`);
-                await new Promise(r => setTimeout(r, pollInterval));
-                continue;
-              }
-
-              const statusData = JSON.parse(statusText);
-              console.log(`  ✅ Batch ${batch_number} status:`, statusData.status);
-
-              if (statusData.status === 'Completed' || statusData.status === 'Failed') {
-                return { ...statusData, job };
-              }
-
-              console.log(`  🔄 Batch ${batch_number} still processing, attempt ${attempt}/${maxAttempts}. Waiting 3 min...`);
-              await new Promise(r => setTimeout(r, pollInterval));
-
-            } catch (err) {
-              console.log(`  ⚠️ Batch ${batch_number} poll error (attempt ${attempt}): ${err.message}`);
-              await new Promise(r => setTimeout(r, pollInterval));
-            }
-          }
-
-          // ── CHANGED: notify webhook on timeout with full format ──
-          console.log(`  ❌ Batch ${batch_number} timed out after ${maxAttempts} attempts.`);
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           try {
-            await fetch(
-              'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
+            const statusRes = await fetch(
+              'https://frontend.boomerangserver.co.in/webhook/batch-status-copy',
               {
                 method : 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                signal : AbortSignal.timeout(30000),
+                signal : AbortSignal.timeout(120000),
                 body   : JSON.stringify({
+                  request_id,
+                  batch_number,
+                  driveInputLink,
+                  request_unique_id,
+                  batchFolderId,
+                  boomerangStatUrl,
                   userId,
                   runId,
                   time,
                   serviceTagName,
-                  rowCount          : job.batch_size || rowCount,
-                  creditsCost,
-                  request_id,
-                  requestStatus     : 'Error',
-                  driveInputLink,
-                  boomerangOutputUrl: `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`,
-                  batch_number,
-                  request_unique_id,
-                  batchFolderId,
-                  webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
-                  executionMode     : 'production',
-                  reason            : `Timed out after ${maxAttempts} attempts`
+                  rowCount   : job.batch_size || rowCount,
+                  creditsCost
                 })
               }
             );
-            console.log(`  📤 Batch ${batch_number} — Error status sent to webhook.`);
+            const statusText = await statusRes.text();
+
+            if (statusText.includes('<html>') || statusText.includes('504')) {
+              console.log(`  ⚠️ Batch ${batch_number} — 504, retrying (${attempt}/${maxAttempts})...`);
+              await new Promise(r => setTimeout(r, pollInterval));
+              continue;
+            }
+
+            const statusData = JSON.parse(statusText);
+            console.log(`  ✅ Batch ${batch_number} status:`, statusData.status);
+
+            if (statusData.status === 'Completed' || statusData.status === 'Failed') {
+              return { ...statusData, job };
+            }
+
+            console.log(`  🔄 Batch ${batch_number} still processing, attempt ${attempt}/${maxAttempts}. Waiting 3 min...`);
+            await new Promise(r => setTimeout(r, pollInterval));
+
           } catch (err) {
-            console.log(`  ⚠️ Batch ${batch_number} — Failed to notify webhook: ${err.message}`);
+            console.log(`  ⚠️ Batch ${batch_number} poll error (attempt ${attempt}): ${err.message}`);
+            await new Promise(r => setTimeout(r, pollInterval));
           }
-
-          return { status: 'Error', job };
-          // ── END CHANGED ──
-        })
-      );
-
-      const hasTimeout = batchStatusResults.some(r => r.status === 'GatewayTimeout');
-      if (hasTimeout) {
-        console.log('\n❌ 504 Gateway Timeout — stopping. Please try again.');
-        break;
-      }
-
-      const batchResults = [];
-
-      for (const result of batchStatusResults) {
-        const { job } = result;
-        const { request_id, driveInputLink, batch_number } = job;
-
-        if (result.status !== 'Completed') {
-          console.log(`  ⚠️ Batch ${batch_number} did not complete. Skipping output.`);
-          batchResults.push({ batch_number, request_id, status: result.status || 'Error', output_url: '' });
-          allOutputLinks.push('');
-          continue;
         }
 
-        const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
-        let outputLink = '';
-
+        // notify webhook on timeout → n8n updates Airtable to Error
+        console.log(`  ❌ Batch ${batch_number} timed out after ${maxAttempts} attempts.`);
         try {
-          const outputRes = await fetch(
+          await fetch(
             'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
             {
               method : 'POST',
               headers: { 'Content-Type': 'application/json' },
-              signal : AbortSignal.timeout(120000),
+              signal : AbortSignal.timeout(30000),
               body   : JSON.stringify({
                 userId,
                 runId,
@@ -371,98 +308,144 @@ try {
                 rowCount          : job.batch_size || rowCount,
                 creditsCost,
                 request_id,
-                requestStatus     : result.status,
+                requestStatus     : 'Error',
                 driveInputLink,
-                boomerangOutputUrl,
+                boomerangOutputUrl: `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`,
                 batch_number,
                 request_unique_id,
                 batchFolderId,
                 webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
-                executionMode     : 'production'
+                executionMode     : 'production',
+                reason            : `Timed out after ${maxAttempts} attempts`
               })
             }
           );
-          const outputText = await outputRes.text();
-          console.log(`  Batch ${batch_number} output raw response:`, outputText);
-          if (outputRes.ok) {
-            try {
-              const outputData = JSON.parse(outputText);
-              outputLink = outputData['Output Link'] || outputData.outputLink || outputData.driveOutputLink || outputData.webViewLink || '';
-            } catch (e) {
-              console.log(`  Batch ${batch_number} output parse failed.`);
-            }
-          } else {
-            console.log(`  ❌ No response, please try again.`);
+          console.log(`  📤 Batch ${batch_number} — Error status sent to webhook.`);
+        } catch (err) {
+          console.log(`  ⚠️ Batch ${batch_number} — Failed to notify webhook: ${err.message}`);
+        }
+
+        return { status: 'Error', job };
+      })
+    );
+
+    const hasTimeout = batchStatusResults.some(r => r.status === 'GatewayTimeout');
+    if (hasTimeout) {
+      console.log('\n❌ 504 Gateway Timeout — stopping. Please try again.');
+      break;
+    }
+
+    const batchResults = [];
+
+    for (const result of batchStatusResults) {
+      const { job } = result;
+      const { request_id, driveInputLink, batch_number } = job;
+
+      if (result.status !== 'Completed') {
+        console.log(`  ⚠️ Batch ${batch_number} did not complete. Skipping output.`);
+        batchResults.push({ batch_number, request_id, status: result.status || 'Error', output_url: '' });
+        allOutputLinks.push('');
+        continue;
+      }
+
+      const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
+      let outputLink = '';
+
+      try {
+        const outputRes = await fetch(
+          'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
+          {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal : AbortSignal.timeout(120000),
+            body   : JSON.stringify({
+              userId,
+              runId,
+              time,
+              serviceTagName,
+              rowCount          : job.batch_size || rowCount,
+              creditsCost,
+              request_id,
+              requestStatus     : result.status,
+              driveInputLink,
+              boomerangOutputUrl,
+              batch_number,
+              request_unique_id,
+              batchFolderId,
+              webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
+              executionMode     : 'production'
+            })
           }
-        } catch (fetchErr) {
+        );
+        const outputText = await outputRes.text();
+        console.log(`  Batch ${batch_number} output raw response:`, outputText);
+        if (outputRes.ok) {
+          try {
+            const outputData = JSON.parse(outputText);
+            outputLink = outputData['Output Link'] || outputData.outputLink || outputData.driveOutputLink || outputData.webViewLink || '';
+          } catch (e) {
+            console.log(`  Batch ${batch_number} output parse failed.`);
+          }
+        } else {
           console.log(`  ❌ No response, please try again.`);
         }
-
-        batchResults.push({ batch_number, request_id, status: result.status, output_url: outputLink });
-        allOutputLinks.push(outputLink);
+      } catch (fetchErr) {
+        console.log(`  ❌ No response, please try again.`);
       }
 
-      console.log(`\n✅ Round ${round} Results:`);
-      for (const result of batchResults) {
-        console.log(`\n   📦 Batch ${result.batch_number}`);
-        console.log(`      Request ID  : ${result.request_id}`);
-        console.log(`      Status      : ${result.status}`);
-        console.log(`      Output Link : ${result.output_url}`);
-      }
+      batchResults.push({ batch_number, request_id, status: result.status, output_url: outputLink });
+      allOutputLinks.push(outputLink);
+    }
 
-      completedBatches += batchResults.length;
-      allBatchResults = allBatchResults.concat(batchResults);
+    console.log(`\n✅ Round ${round} Results:`);
+    for (const result of batchResults) {
+      console.log(`\n   📦 Batch ${result.batch_number}`);
+      console.log(`      Request ID  : ${result.request_id}`);
+      console.log(`      Status      : ${result.status}`);
+      console.log(`      Output Link : ${result.output_url}`);
+    }
 
-      if (completedBatches >= total_batches) {
-        const anyFailed = batchResults.some(r => r.status !== 'Completed' || !r.output_url);
-        if (anyFailed) {
-          console.log('\n⚠️ Some batches did not complete successfully.');
-        } else {
-          await getNextBatchJobs();
-        }
-        break;
-      }
+    allBatchResults = allBatchResults.concat(batchResults);
 
-      console.log(`\n⏳ ${total_batches - completedBatches} batch(es) remaining. Getting next round...`);
-      batchJobs = await getNextBatchJobs();
+    // CHANGED: push each batch row immediately to dataset as it completes
+    for (const b of batchResults) {
+      await Actor.pushData({
+        run_id        : runId,
+        service_name  : serviceName,
+        service_tag   : serviceTagName,
+        request_id    : b.request_id,
+        status        : b.status,
+        'Output Link' : b.output_url || 'Failed'
+      });
+      console.log(`  💾 Batch ${b.batch_number} saved to dataset.`);
+    }
 
-      while (!batchJobs || batchJobs.length === 0) {
-        if (completedBatches >= total_batches) {
-          console.log('✅ All batches completed.');
-          break;
-        }
-        console.log('⏳ No slots available (backend full). Waiting 2 mins before retry...');
-        await new Promise(r => setTimeout(r, 2 * 60 * 1000));
-        batchJobs = await getNextBatchJobs();
-      }
+    // always call Workflow 2 again — stop when it returns empty
+    console.log(`\n⏳ Checking for next pending batch...`);
+    batchJobs = await getNextBatchJobs();
 
-      if (completedBatches >= total_batches) break;
+    if (!batchJobs || batchJobs.length === 0) {
+      console.log('✅ No more pending batches — all done!');
+      break;
     }
   }
 
   // ──────────────────────────────
   // 7. FINAL SUMMARY
   // ──────────────────────────────
+  const completedCount = allBatchResults.filter(b => b.status === 'Completed').length;
+  const errorCount     = allBatchResults.filter(b => b.status !== 'Completed').length;
+
   console.log('\n════════════════════════════════════');
-  console.log('🎉 ALL BATCHES COMPLETED!');
+  console.log('🎉 ALL BATCHES PROCESSED!');
   console.log('════════════════════════════════════');
-  console.log('Run ID        :', runId);
-  console.log('Total Batches :', total_batches);
+  console.log('Run ID          :', runId);
+  console.log('Total Processed :', allBatchResults.length);
+  console.log('Completed       :', completedCount);
+  console.log('Errors          :', errorCount);
   console.log('\nOutput Links:');
   allOutputLinks.forEach((link, i) => console.log(`  Batch ${i + 1} : ${link || 'Failed'}`));
   console.log('════════════════════════════════════');
-
-  // one row per batch, Output Link as direct URL
-  for (const b of allBatchResults) {
-    await Actor.pushData({
-      run_id        : runId,
-      service_name  : serviceName,
-      service_tag   : serviceTagName,
-      request_id    : b.request_id,
-      status        : b.status,
-      'Output Link' : b.output_url || 'Failed'
-    });
-  }
 
 } catch (err) {
   console.log('❌ Error:', err.message);
