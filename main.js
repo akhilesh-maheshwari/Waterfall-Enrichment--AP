@@ -113,7 +113,43 @@ try {
   await Actor.charge({ eventName: serviceOption1, count: rowCount });
 
   // ──────────────────────────────
-  // 5. STEP 1 — TRIGGER WORKFLOW 1
+  // 5. FETCH DRIVE CSV + PUSH ROWS
+  // ──────────────────────────────
+  const fetchAndPushDriveData = async (outputLink, batch_number) => {
+    try {
+      const fileIdMatch = outputLink.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (!fileIdMatch) {
+        console.log(`  ⚠️ Batch ${batch_number} — Could not extract file ID from Drive link.`);
+        return;
+      }
+      const fileId  = fileIdMatch[1];
+      const csvUrl  = `https://drive.google.com/uc?export=download&id=${fileId}`;
+
+      console.log(`  📥 Batch ${batch_number} — Fetching CSV from Drive...`);
+      const csvRes  = await fetch(csvUrl);
+      const csvText = await csvRes.text();
+
+      const lines   = csvText.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      const rows    = lines.slice(1);
+
+      console.log(`  📊 Batch ${batch_number} — ${rows.length} rows found. Pushing to dataset...`);
+
+      for (const line of rows) {
+        const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+        const rowObj = {};
+        headers.forEach((h, i) => { rowObj[h] = values[i] || ''; });
+        await Actor.pushData(rowObj);
+      }
+
+      console.log(`  💾 Batch ${batch_number} — ${rows.length} rows saved to dataset.`);
+    } catch (err) {
+      console.log(`  ❌ Batch ${batch_number} — Failed to fetch Drive data: ${err.message}`);
+    }
+  };
+
+  // ──────────────────────────────
+  // 6. STEP 1 — TRIGGER WORKFLOW 1
   // ──────────────────────────────
   console.log('\n════════════════════════════════════');
   console.log('Step 1 : Setting up master & batches');
@@ -175,7 +211,7 @@ try {
   console.log('   Total Batches :', total_batches);
 
   // ──────────────────────────────
-  // 6. STEP 2 — PROCESS BATCHES
+  // 7. STEP 2 — PROCESS BATCHES
   // ──────────────────────────────
   let round           = 0;
   let allOutputLinks  = [];
@@ -291,7 +327,6 @@ try {
           }
         }
 
-        // notify webhook on timeout → n8n updates Airtable to Error
         console.log(`  ❌ Batch ${batch_number} timed out after ${maxAttempts} attempts.`);
         try {
           await fetch(
@@ -395,6 +430,13 @@ try {
 
       batchResults.push({ batch_number, request_id, status: result.status, output_url: outputLink });
       allOutputLinks.push(outputLink);
+
+      // fetch CSV from Drive and push each row to dataset
+      if (outputLink) {
+        await fetchAndPushDriveData(outputLink, batch_number);
+      } else {
+        console.log(`  ⚠️ Batch ${batch_number} — No output link, skipping Drive fetch.`);
+      }
     }
 
     console.log(`\n✅ Round ${round} Results:`);
@@ -407,20 +449,6 @@ try {
 
     allBatchResults = allBatchResults.concat(batchResults);
 
-    // CHANGED: push each batch row immediately to dataset as it completes
-    for (const b of batchResults) {
-      await Actor.pushData({
-        run_id        : runId,
-        service_name  : serviceName,
-        service_tag   : serviceTagName,
-        request_id    : b.request_id,
-        status        : b.status,
-        'Output Link' : b.output_url || 'Failed'
-      });
-      console.log(`  💾 Batch ${b.batch_number} saved to dataset.`);
-    }
-
-    // always call Workflow 2 again — stop when it returns empty
     console.log(`\n⏳ Checking for next pending batch...`);
     batchJobs = await getNextBatchJobs();
 
@@ -431,7 +459,7 @@ try {
   }
 
   // ──────────────────────────────
-  // 7. FINAL SUMMARY
+  // 8. FINAL SUMMARY
   // ──────────────────────────────
   const completedCount = allBatchResults.filter(b => b.status === 'Completed').length;
   const errorCount     = allBatchResults.filter(b => b.status !== 'Completed').length;
