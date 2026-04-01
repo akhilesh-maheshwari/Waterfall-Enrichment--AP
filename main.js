@@ -234,14 +234,13 @@ try {
 
       console.log(`\n  Sending ${batchJobs.length} batches to n8n for status checking...`);
 
-      // ── CHANGED: polling loop instead of single long-wait fetch ──
       const batchStatusResults = await Promise.all(
         batchJobs.map(async (job) => {
           const { request_id, driveInputLink, batch_number } = job;
           console.log(`  ⏳ Batch ${batch_number} — Polling status (request_id: ${request_id})...`);
 
-          const maxAttempts  = 10;     // CHANGED: 10 × 2min = 20 minutes max
-          const pollInterval = 180000; // CHANGED: 2 minutes between polls
+          const maxAttempts  = 10;
+          const pollInterval = 180000;
 
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
@@ -250,7 +249,7 @@ try {
                 {
                   method : 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  signal : AbortSignal.timeout(120000), // 60s per individual request
+                  signal : AbortSignal.timeout(120000),
                   body   : JSON.stringify({
                     request_id,
                     batch_number,
@@ -295,7 +294,6 @@ try {
           return { status: 'Failed', job };
         })
       );
-      // ── END CHANGED SECTION ──
 
       const hasTimeout = batchStatusResults.some(r => r.status === 'GatewayTimeout');
       if (hasTimeout) {
@@ -384,13 +382,22 @@ try {
         break;
       }
 
+      // ── Get next round ──
       console.log(`\n⏳ ${total_batches - completedBatches} batch(es) remaining. Getting next round...`);
       batchJobs = await getNextBatchJobs();
 
-      if (!batchJobs || batchJobs.length === 0) {
-        console.log('✅ No more pending batches.');
-        break;
+      // Wait and retry if backend slots are full
+      while (!batchJobs || batchJobs.length === 0) {
+        if (completedBatches >= total_batches) {
+          console.log('✅ All batches completed.');
+          break;
+        }
+        console.log('⏳ No slots available (backend full). Waiting 2 mins before retry...');
+        await new Promise(r => setTimeout(r, 2 * 60 * 1000));
+        batchJobs = await getNextBatchJobs();
       }
+
+      if (completedBatches >= total_batches) break;
     }
   }
 
