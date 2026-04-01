@@ -180,6 +180,7 @@ try {
   let completedBatches = 0;
   let round            = 0;
   let allOutputLinks   = [];
+  let allBatchResults  = [];
 
   const getNextBatchJobs = async () => {
     try {
@@ -217,7 +218,6 @@ try {
     }
   };
 
-  // ── FIXED: Initial call with retry loop ──
   let batchJobs = await getNextBatchJobs();
 
   while (!batchJobs || batchJobs.length === 0) {
@@ -347,6 +347,7 @@ try {
             }
           );
           const outputText = await outputRes.text();
+          console.log(`  Batch ${batch_number} output raw response:`, outputText);
           if (outputRes.ok) {
             try {
               const outputData = JSON.parse(outputText);
@@ -374,8 +375,7 @@ try {
       }
 
       completedBatches += batchResults.length;
-
-      await Actor.pushData({ round, request_unique_id, completedBatches, total_batches, batchResults });
+      allBatchResults = allBatchResults.concat(batchResults);
 
       if (completedBatches >= total_batches) {
         const anyFailed = batchResults.some(r => r.status !== 'Completed' || !r.output_url);
@@ -387,11 +387,9 @@ try {
         break;
       }
 
-      // ── Get next round ──
       console.log(`\n⏳ ${total_batches - completedBatches} batch(es) remaining. Getting next round...`);
       batchJobs = await getNextBatchJobs();
 
-      // Wait and retry if backend slots are full
       while (!batchJobs || batchJobs.length === 0) {
         if (completedBatches >= total_batches) {
           console.log('✅ All batches completed.');
@@ -409,18 +407,26 @@ try {
   // ──────────────────────────────
   // 7. FINAL SUMMARY
   // ──────────────────────────────
-  const successLinks = allOutputLinks.filter(l => l);
-  if (successLinks.length > 0 && successLinks.length === total_batches) {
-    console.log('\n════════════════════════════════════');
-    console.log('🎉 ALL BATCHES COMPLETED!');
-    console.log('════════════════════════════════════');
-    console.log('Request ID    :', request_unique_id);
-    console.log('Total Batches :', total_batches);
-    console.log('\nOutput Links:');
-    allOutputLinks.forEach((link, i) => console.log(`  Batch ${i + 1} : ${link}`));
-    console.log('════════════════════════════════════');
+  console.log('\n════════════════════════════════════');
+  console.log('🎉 ALL BATCHES COMPLETED!');
+  console.log('════════════════════════════════════');
+  console.log('Run ID        :', runId);
+  console.log('Total Batches :', total_batches);
+  console.log('\nOutput Links:');
+  allOutputLinks.forEach((link, i) => console.log(`  Batch ${i + 1} : ${link || 'Failed'}`));
+  console.log('════════════════════════════════════');
 
-    await Actor.pushData({ status: 'completed', request_unique_id, total_batches, allOutputLinks });
+  // one row per batch, Output Link as direct URL
+  for (const b of allBatchResults) {
+    await Actor.pushData({
+      run_id        : runId,
+      service_name  : serviceName,
+      service_tag   : serviceTagName,
+      batch_number  : b.batch_number,
+      request_id    : b.request_id,
+      status        : b.status,
+      'Output Link' : b.output_url || 'Failed'
+    });
   }
 
 } catch (err) {
