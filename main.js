@@ -217,11 +217,16 @@ try {
     }
   };
 
+  // ── FIXED: Initial call with retry loop ──
   let batchJobs = await getNextBatchJobs();
 
-  if (!batchJobs || batchJobs.length === 0) {
-    console.log('❌ No response, please try again.');
-  } else {
+  while (!batchJobs || batchJobs.length === 0) {
+    console.log('⏳ No slots available (backend full). Waiting 2 mins before retry...');
+    await new Promise(r => setTimeout(r, 2 * 60 * 1000));
+    batchJobs = await getNextBatchJobs();
+  }
+
+  if (batchJobs && batchJobs.length > 0) {
 
     while (true) {
 
@@ -305,7 +310,7 @@ try {
 
       for (const result of batchStatusResults) {
         const { job } = result;
-        const { request_id, driveInputLink, batch_number, nocodb_id } = job;
+        const { request_id, driveInputLink, batch_number } = job;
 
         if (result.status !== 'Completed') {
           console.log(`  ⚠️ Batch ${batch_number} did not complete. Skipping output.`);
