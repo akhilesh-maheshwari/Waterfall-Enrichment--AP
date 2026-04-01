@@ -15,30 +15,22 @@ Actor.on('aborting', async () => {
     return;
   }
 
-  await Promise.all(pendingBatchJobs.map(async (job) => {
-    const { request_id, driveInputLink, batch_number } = job;
-    console.log(`  📤 Notifying abort for batch ${batch_number}...`);
+  for (const job of pendingBatchJobs) {
+    const { request_id, batch_number } = job;
+    console.log(`  📤 Notifying abort for batch ${batch_number} (request_id: ${request_id})...`);
     try {
-      await fetch(
-        'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
-        {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal : AbortSignal.timeout(4000),
-          body   : JSON.stringify({
-            request_id,
-            requestStatus : 'Aborted',
-            driveInputLink,
-            batch_number,
-            reason        : 'Actor was manually aborted'
-          })
-        }
-      );
-      console.log(`  ✅ Batch ${batch_number} — Aborted status sent.`);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy', false);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({
+        request_id,
+        requestStatus : 'Aborted'
+      }));
+      console.log(`  ✅ Batch ${batch_number} — Aborted status sent. Response: ${xhr.status}`);
     } catch (err) {
       console.log(`  ⚠️ Batch ${batch_number} — Failed to notify: ${err.message}`);
     }
-  }));
+  }
 });
 
 try {
@@ -422,7 +414,6 @@ try {
         console.log(`  ⚠️ Batch ${batch_number} did not complete. Skipping output.`);
         batchResults.push({ batch_number, request_id, status: result.status || 'Error', output_url: '' });
         allOutputLinks.push('');
-        // remove from pending since it's settled (Error/Failed)
         pendingBatchJobs = pendingBatchJobs.filter(j => j.request_id !== request_id);
         continue;
       }
@@ -475,7 +466,7 @@ try {
       batchResults.push({ batch_number, request_id, status: result.status, output_url: outputLink });
       allOutputLinks.push(outputLink);
 
-      // remove from pending since it's fully completed
+      // remove from pending since fully completed
       pendingBatchJobs = pendingBatchJobs.filter(j => j.request_id !== request_id);
 
       // fetch CSV from Drive and push each row to dataset
@@ -496,7 +487,7 @@ try {
 
     allBatchResults = allBatchResults.concat(batchResults);
 
-    // clear pending after round is fully done
+    // clear pending after round fully done
     pendingBatchJobs = [];
 
     console.log(`\n⏳ Checking for next pending batch...`);
