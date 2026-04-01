@@ -2,37 +2,6 @@ import { Actor } from 'apify';
 
 await Actor.init();
 
-// ──────────────────────────────
-// ABORT HANDLER
-// ──────────────────────────────
-let pendingBatchJobs = [];
-
-Actor.on('aborting', async () => {
-  console.log('\n⚠️ Actor aborted! Notifying webhook for pending batches...');
-
-  if (pendingBatchJobs.length === 0) {
-    console.log('No pending batches to notify.');
-    return;
-  }
-
-  for (const job of pendingBatchJobs) {
-    const { request_id, batch_number } = job;
-    console.log(`  📤 Notifying abort for batch ${batch_number} (request_id: ${request_id})...`);
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy', false);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.send(JSON.stringify({
-        request_id,
-        requestStatus : 'Aborted'
-      }));
-      console.log(`  ✅ Batch ${batch_number} — Aborted status sent. Response: ${xhr.status}`);
-    } catch (err) {
-      console.log(`  ⚠️ Batch ${batch_number} — Failed to notify: ${err.message}`);
-    }
-  }
-});
-
 try {
 
   // ──────────────────────────────
@@ -302,9 +271,6 @@ try {
 
     console.log(`\n  Sending ${batchJobs.length} batches to n8n for status checking...`);
 
-    // mark all current batches as pending for abort handler
-    pendingBatchJobs = [...batchJobs];
-
     const batchStatusResults = await Promise.all(
       batchJobs.map(async (job) => {
         const { request_id, driveInputLink, batch_number } = job;
@@ -414,7 +380,6 @@ try {
         console.log(`  ⚠️ Batch ${batch_number} did not complete. Skipping output.`);
         batchResults.push({ batch_number, request_id, status: result.status || 'Error', output_url: '' });
         allOutputLinks.push('');
-        pendingBatchJobs = pendingBatchJobs.filter(j => j.request_id !== request_id);
         continue;
       }
 
@@ -466,9 +431,6 @@ try {
       batchResults.push({ batch_number, request_id, status: result.status, output_url: outputLink });
       allOutputLinks.push(outputLink);
 
-      // remove from pending since fully completed
-      pendingBatchJobs = pendingBatchJobs.filter(j => j.request_id !== request_id);
-
       // fetch CSV from Drive and push each row to dataset
       if (outputLink) {
         await fetchAndPushDriveData(outputLink, batch_number);
@@ -486,9 +448,6 @@ try {
     }
 
     allBatchResults = allBatchResults.concat(batchResults);
-
-    // clear pending after round fully done
-    pendingBatchJobs = [];
 
     console.log(`\n⏳ Checking for next pending batch...`);
     batchJobs = await getNextBatchJobs();
