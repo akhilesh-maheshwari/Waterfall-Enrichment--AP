@@ -295,8 +295,42 @@ try {
             }
           }
 
+          // ── CHANGED: notify webhook on timeout with full format ──
           console.log(`  ❌ Batch ${batch_number} timed out after ${maxAttempts} attempts.`);
-          return { status: 'Failed', job };
+          try {
+            await fetch(
+              'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
+              {
+                method : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal : AbortSignal.timeout(30000),
+                body   : JSON.stringify({
+                  userId,
+                  runId,
+                  time,
+                  serviceTagName,
+                  rowCount          : job.batch_size || rowCount,
+                  creditsCost,
+                  request_id,
+                  requestStatus     : 'Error',
+                  driveInputLink,
+                  boomerangOutputUrl: `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`,
+                  batch_number,
+                  request_unique_id,
+                  batchFolderId,
+                  webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
+                  executionMode     : 'production',
+                  reason            : `Timed out after ${maxAttempts} attempts`
+                })
+              }
+            );
+            console.log(`  📤 Batch ${batch_number} — Error status sent to webhook.`);
+          } catch (err) {
+            console.log(`  ⚠️ Batch ${batch_number} — Failed to notify webhook: ${err.message}`);
+          }
+
+          return { status: 'Error', job };
+          // ── END CHANGED ──
         })
       );
 
@@ -314,7 +348,7 @@ try {
 
         if (result.status !== 'Completed') {
           console.log(`  ⚠️ Batch ${batch_number} did not complete. Skipping output.`);
-          batchResults.push({ batch_number, request_id, status: result.status || 'Failed', output_url: '' });
+          batchResults.push({ batch_number, request_id, status: result.status || 'Error', output_url: '' });
           allOutputLinks.push('');
           continue;
         }
@@ -334,15 +368,17 @@ try {
                 runId,
                 time,
                 serviceTagName,
-                rowCount         : job.batch_size || rowCount,
+                rowCount          : job.batch_size || rowCount,
                 creditsCost,
                 request_id,
-                requestStatus    : result.status,
+                requestStatus     : result.status,
                 driveInputLink,
                 boomerangOutputUrl,
                 batch_number,
                 request_unique_id,
-                batchFolderId
+                batchFolderId,
+                webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
+                executionMode     : 'production'
               })
             }
           );
