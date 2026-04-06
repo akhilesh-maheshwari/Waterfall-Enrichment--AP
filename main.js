@@ -110,7 +110,7 @@ try {
   console.log('Row count    :', rowCount);
   console.log('Credits cost : $', creditsCost);
 
-  await Actor.charge({ eventName: serviceOption1, count: rowCount });
+  // ✅ REMOVED: upfront bulk Actor.charge() — now charged per completed batch below
 
   // ──────────────────────────────
   // 5. FETCH DRIVE CSV + PUSH ROWS
@@ -162,7 +162,7 @@ try {
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal : AbortSignal.timeout(60000),
+        signal : AbortSignal.timeout(300000), // 5 minutes
         body   : JSON.stringify({
           userId,
           runId,
@@ -216,6 +216,7 @@ try {
   let round           = 0;
   let allOutputLinks  = [];
   let allBatchResults = [];
+  let totalCharged    = 0; // ✅ track total charged amount
 
   const getNextBatchJobs = async () => {
     try {
@@ -383,6 +384,13 @@ try {
         continue;
       }
 
+      // ✅ Charge only for this completed batch
+      const batchSize      = job.batch_size || 0;
+      const batchCost      = parseFloat((batchSize * 0.015).toFixed(3));
+      totalCharged        += batchCost;
+      console.log(`  💳 Batch ${batch_number} — Charging for ${batchSize} leads ($${batchCost}). Total charged: $${totalCharged.toFixed(3)}`);
+      await Actor.charge({ eventName: serviceOption1, count: batchSize });
+
       const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
       let outputLink = '';
 
@@ -431,7 +439,6 @@ try {
       batchResults.push({ batch_number, request_id, status: result.status, output_url: outputLink });
       allOutputLinks.push(outputLink);
 
-      // fetch CSV from Drive and push each row to dataset
       if (outputLink) {
         await fetchAndPushDriveData(outputLink, batch_number);
       } else {
@@ -471,6 +478,7 @@ try {
   console.log('Total Processed :', allBatchResults.length);
   console.log('Completed       :', completedCount);
   console.log('Errors          :', errorCount);
+  console.log('Total Charged   : $', totalCharged.toFixed(3));
   console.log('\nOutput Links:');
   allOutputLinks.forEach((link, i) => console.log(`  Batch ${i + 1} : ${link || 'Failed'}`));
   console.log('════════════════════════════════════');
