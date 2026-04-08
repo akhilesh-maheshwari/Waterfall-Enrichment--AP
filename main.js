@@ -158,7 +158,7 @@ try {
   let wf1Res;
   try {
     wf1Res = await fetch(
-      'https://frontend.boomerangserver.co.in/webhook/11fd4929-f376-40f8-9d6f-71f1b3587b3d',
+      'https://frontend.boomerangserver.co.in/webhook/Universal_masterflow',
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -221,7 +221,7 @@ try {
   const getNextBatchJobs = async () => {
     try {
       const wf2Res = await fetch(
-        'https://frontend.boomerangserver.co.in/webhook/2d274972-e90d-4f14-bb58-57b7ea40abdf',
+        'https://frontend.boomerangserver.co.in/webhook/universal_batch_process',
         {
           method : 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -283,7 +283,7 @@ try {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           try {
             const statusRes = await fetch(
-              'https://frontend.boomerangserver.co.in/webhook/batch-status-copy',
+              'https://frontend.boomerangserver.co.in/webhook/Status_and_output_universal',
               {
                 method : 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -331,7 +331,7 @@ try {
         console.log(`  ❌ Batch ${batch_number} timed out after ${maxAttempts} attempts.`);
         try {
           await fetch(
-            'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
+            'https://frontend.boomerangserver.co.in/webhook/Status_and_output_universal',
             {
               method : 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -350,7 +350,6 @@ try {
                 batch_number,
                 request_unique_id,
                 batchFolderId,
-                webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
                 executionMode     : 'production',
                 reason            : `Timed out after ${maxAttempts} attempts`
               })
@@ -396,7 +395,7 @@ try {
 
       try {
         const outputRes = await fetch(
-          'https://frontend.boomerangserver.co.in/webhook/waterfall-output-copy',
+          'https://frontend.boomerangserver.co.in/webhook/Status_and_output_universal',
           {
             method : 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -415,7 +414,6 @@ try {
               batch_number,
               request_unique_id,
               batchFolderId,
-              webhookUrl        : 'https://internal.boomerangserver.co.in/webhook/waterfall-output-copy',
               executionMode     : 'production'
             })
           }
