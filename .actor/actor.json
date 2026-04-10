@@ -1,13 +1,27 @@
 {
   "actorSpecification": 1,
-  "name": "Waterfall-Enrichment",
-  "title": "Waterfall Enrichment Actor",
-  "version": "0.1",
-  "buildTag": "latest",
-  "dockerfile": "./Dockerfile",
-  "defaultRunOptions": {
-    "build": "latest",
-    "timeoutSecs": 500,
-    "memoryMbytes": 1024
+  "name": "your-actor-name",
+  "version": "1.0",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "views": {
+        "overview": {
+          "title": "Overview",
+          "transformation": {
+            "fields": [
+              "first_name",
+              "last_name",
+              "domain",
+              "email",
+              "email_status"
+            ]
+          },
+          "display": {
+            "component": "table"
+          }
+        }
+      }
+    }
   }
 }
