@@ -135,14 +135,22 @@ try {
 
       console.log(`  📊 Batch ${batch_number} — ${rows.length} rows found. Pushing to dataset...`);
 
+      // ✅ Build all rows first then push as single array
+      // This ensures Apify reads column order from first item's key insertion order
+      // (which matches CSV header order), instead of sorting alphabetically
+      const items = [];
       for (const line of rows) {
+        if (!line.trim()) continue;
         const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
         const rowObj = {};
-        headers.forEach((h, i) => { rowObj[h] = values[i] || ''; });
-        await Actor.pushData(rowObj);
+        headers.forEach((h, i) => { rowObj[h] = values[i] !== undefined ? values[i] : ''; });
+        items.push(rowObj);
+      }
+      if (items.length > 0) {
+        await Actor.pushData(items);
       }
 
-      console.log(`  💾 Batch ${batch_number} — ${rows.length} rows saved to dataset.`);
+      console.log(`  💾 Batch ${batch_number} — ${items.length} rows saved to dataset.`);
     } catch (err) {
       console.log(`  ❌ Batch ${batch_number} — Failed to fetch Drive data: ${err.message}`);
     }
