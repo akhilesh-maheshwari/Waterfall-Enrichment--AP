@@ -12,13 +12,14 @@ try {
   const uploadedFile   = input.uploadedFile          || '';
   const serviceTagName = input.serviceRequestTagName || '';
   const serviceName    = input.serviceName           || 'Waterfall Enrichment';
-  const serviceOption1 = input.serviceOption1        || 'pro';
+  const serviceOption1 = input.plan || input.serviceOption1 || 'pro';
   const requestSource  = input.requestSource         || 'Waterfall_enrichment_AP';
   const boomerangInputUrl = input.boomerangInputUrl  || 'https://s1.boomerangserver.co.in/webhook/waterfall-live';
   const boomerangStatUrl  = input.boomerangStatUrl   || 'https://s1.boomerangserver.co.in/webhook/waterfall-request-stats';
 
   console.log('Tag Name :', serviceTagName);
   console.log('Service  :', serviceName);
+  console.log('Plan     :', serviceOption1);
   console.log('Entries  :', entries ? 'Yes' : 'No');
   console.log('File URL :', uploadedFile ? 'Yes' : 'No');
 
@@ -106,11 +107,13 @@ try {
   // ──────────────────────────────
   // 4. CALCULATE COST
   // ──────────────────────────────
-  const creditsCost = parseFloat((rowCount * 0.015).toFixed(3));
-  console.log('Row count    :', rowCount);
-  console.log('Credits cost : $', creditsCost);
+  const planPricing  = { essential: 0.005, pro: 0.015, ultimate: 0.025 };
+  const pricePerLead = planPricing[serviceOption1] || 0.015;
+  const creditsCost  = parseFloat((rowCount * pricePerLead).toFixed(3));
 
-  // ✅ REMOVED: upfront bulk Actor.charge() — now charged per completed batch below
+  console.log('Row count    :', rowCount);
+  console.log('Price/lead   : $', pricePerLead);
+  console.log('Credits cost : $', creditsCost);
 
   // ──────────────────────────────
   // 5. FETCH DRIVE CSV + PUSH ROWS
@@ -135,9 +138,6 @@ try {
 
       console.log(`  📊 Batch ${batch_number} — ${rows.length} rows found. Pushing to dataset...`);
 
-      // ✅ Build all rows first then push as single array
-      // This ensures Apify reads column order from first item's key insertion order
-      // (which matches CSV header order), instead of sorting alphabetically
       const items = [];
       for (const line of rows) {
         if (!line.trim()) continue;
@@ -170,7 +170,7 @@ try {
       {
         method : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal : AbortSignal.timeout(300000), // 5 minutes
+        signal : AbortSignal.timeout(300000),
         body   : JSON.stringify({
           userId,
           runId,
@@ -224,7 +224,7 @@ try {
   let round           = 0;
   let allOutputLinks  = [];
   let allBatchResults = [];
-  let totalCharged    = 0; // ✅ track total charged amount
+  let totalCharged    = 0;
 
   const getNextBatchJobs = async () => {
     try {
@@ -391,11 +391,11 @@ try {
         continue;
       }
 
-      // ✅ Charge only for this completed batch
-      const batchSize      = job.batch_size || 0;
-      const batchCost      = parseFloat((batchSize * 0.015).toFixed(3));
-      totalCharged        += batchCost;
-      console.log(`  💳 Batch ${batch_number} — Charging for ${batchSize} leads ($${batchCost}). Total charged: $${totalCharged.toFixed(3)}`);
+      // ✅ Charge per completed batch using dynamic plan price
+      const batchSize  = job.batch_size || 0;
+      const batchCost  = parseFloat((batchSize * pricePerLead).toFixed(3));
+      totalCharged    += batchCost;
+      console.log(`  💳 Batch ${batch_number} — Charging for ${batchSize} leads @ $${pricePerLead} each ($${batchCost}). Total charged: $${totalCharged.toFixed(3)}`);
       await Actor.charge({ eventName: serviceOption1, count: batchSize });
 
       const boomerangOutputUrl = `https://s1.boomerangserver.co.in/webhook/waterfalls-request-output?request_id=${request_id}`;
@@ -481,6 +481,8 @@ try {
   console.log('🎉 ALL BATCHES PROCESSED!');
   console.log('════════════════════════════════════');
   console.log('Run ID          :', runId);
+  console.log('Plan            :', serviceOption1);
+  console.log('Price/lead      : $', pricePerLead);
   console.log('Total Processed :', allBatchResults.length);
   console.log('Completed       :', completedCount);
   console.log('Errors          :', errorCount);
