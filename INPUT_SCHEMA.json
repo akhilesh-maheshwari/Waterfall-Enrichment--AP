@@ -22,7 +22,20 @@
       "description": "Enter a tag name for this request e.g. Waterfall Enrichment",
       "editor": "textfield",
       "prefill": "Waterfall Enrichment"
+    },
+    "plan": {
+      "title": "Plan",
+      "type": "string",
+      "description": "Select your enrichment plan. Essential — $0.005/result | Pro — $0.015/result | Ultimate — $0.025/result",
+      "editor": "select",
+      "enum": ["essential", "pro", "ultimate"],
+      "enumTitles": [
+        "Essential — $0.005 per result",
+        "Pro — $0.015 per result (Recommended)",
+        "Ultimate — $0.025 per result"
+      ],
+      "default": "pro"
     }
   },
-  "required": ["serviceRequestTagName"]
+  "required": ["serviceRequestTagName", "plan"]
 }
